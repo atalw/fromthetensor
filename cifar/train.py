@@ -3,7 +3,7 @@ from tinygrad import Tensor, nn, dtypes, Device
 from tinygrad.nn import optim 
 from tinygrad.nn.state import get_parameters
 from extra.datasets import fetch_cifar
-from extra.training import train
+from extra.training import train, evaluate
 from tqdm import trange
 from tinygrad.helpers import CI
 
@@ -39,18 +39,6 @@ class AlexNet():
         x = self.fc3(x).relu()
         return x.log_softmax(axis=1)
 
-def eval():
-    sample = np.random.randint(0, X_test.shape[0], size=(BS))
-    batch = Tensor(X_test.numpy()[sample], requires_grad=False, dtype=dtypes.float32)
-    labels = Tensor(Y_test.numpy()[sample], requires_grad=False)
-
-    out = model(batch)
-    loss = Tensor.sparse_categorical_crossentropy(out, labels)
-
-    correct = out.argmax(axis=1) == labels.argmax()
-    
-    return correct, loss
-
 def train_step():
     sample = np.random.randint(0, X_train.shape[0], size=(BS))
     batch = Tensor(X_train.numpy()[sample], requires_grad=False, dtype=dtypes.float32)
@@ -63,6 +51,9 @@ def train_step():
     loss.backward()
     opt.step()
 
+    acc = (out.argmax(axis=-1) == labels).mean()
+    return acc.numpy(), loss.numpy()
+
 
 X_train, Y_train, X_test, Y_test = fetch_cifar()
 # load data and label into GPU and convert to dtype accordingly
@@ -72,25 +63,17 @@ X_train, X_test = X_train.reshape((-1, 3, 32, 32)), X_test.reshape((-1, 3, 32, 3
 # Y_train, Y_test = Y_train.one_hot(10), Y_test.one_hot(10)
 
 model = AlexNet()
-epochs = 100
-BS = 128 
+training_steps = 1000
+BS = 128
+lr = 0.01
 
 with Tensor.train():
-    lr = 0.01
     for round in range(10):
         opt = optim.SGD(get_parameters(model), lr=lr, momentum=0.9, weight_decay=0.0005)
         if round > 0:
-            corrects = []
-            losses = []
-            for step in range(10):
-                correct, loss = eval()
-                losses.append(loss.numpy().tolist())
-                corrects.extend(correct.numpy().tolist())
-            
-            correct_sum, correct_len = sum(corrects), len(corrects)
-            eval_acc = correct_sum / correct_len * 100
-            print(f"Eval        Round: {round} Test Accuracy: {correct_sum}/{correct_len} = {eval_acc:2f}% Loss {(sum(losses)/len(losses)):2f}")
-
-        for i in (t := trange(epochs, disable=CI)):            
-            train_step()
-        lr /= 10
+            evaluate(model, X_test.numpy(), Y_test.numpy(), 10)
+        for i in (t := trange(training_steps, disable=CI)):            
+            acc, loss = train_step()
+            t.set_description("loss %.2f accuracy %.2f" % (loss, acc))
+        # learning rate divided by 10 3-times in the original paper
+        lr *= 0.5
