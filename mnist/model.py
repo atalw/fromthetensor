@@ -3,6 +3,7 @@ from tinygrad.nn import Conv2d, BatchNorm2d, Linear
 
 class LeNet:
     def __init__(self):
+        # http://vision.stanford.edu/cs598_spring07/papers/Lecun98.pdf
         # l1 = conv layer with 6 feature maps of 28x28 connected to 5x5 neighbourhood in the input
         # l2 = sub sampling layer with 6 feature maps of size 14x14 connected to a 2x2 neighbourhood of feature map l1
         # l3 = conv layer with 16 feature maps 
