@@ -1,7 +1,10 @@
+# METAL=1 JIT=2 python3 cifar/train.py
+# JIT=2 needed to ignore gpu hang graphing bug
 import time
 import numpy as np
+from typing import Tuple
 from tinygrad import Tensor, nn, dtypes, Device, TinyJit, GlobalCounters
-from tinygrad.nn import optim 
+from tinygrad.nn import optim, Conv2d, BatchNorm2d, Linear
 from tinygrad.nn.state import get_parameters
 from extra.datasets import fetch_cifar
 from extra.training import train, evaluate
@@ -12,38 +15,27 @@ from tinygrad.helpers import CI
 # adjusted values for 32x32 input size
 class AlexNet():
     def __init__(self):
-        self.conv1 = nn.Conv2d(3, 32, kernel_size=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(32)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
-        self.bn2 = nn.BatchNorm2d(64)
-        self.conv3 = nn.Conv2d(64, 256, kernel_size=3, padding=1)
-        self.conv4 = nn.Conv2d(256, 512, kernel_size=3, padding=1, bias=False)
-        self.conv5 = nn.Conv2d(512, 512, kernel_size=3, padding=1)
-        self.fc1 = nn.Linear(512*3*3, 4096)
-        self.fc2 = nn.Linear(4096, 4096)
-        self.fc3 = nn.Linear(4096, 10)
+        self.layers = [
+        Conv2d(3, 32, kernel_size=1, bias=False), Tensor.relu,
+        lambda x: x.max_pool2d(kernel_size=3, stride=2),
+        BatchNorm2d(32),
+        Conv2d(32, 64, kernel_size=3, padding=1), Tensor.relu,
+        lambda x: x.max_pool2d(kernel_size=3, stride=2),
+        BatchNorm2d(64),
+        Conv2d(64, 256, kernel_size=3, padding=1), Tensor.relu,
+        Conv2d(256, 512, kernel_size=3, padding=1, bias=False), Tensor.relu,
+        Conv2d(512, 512, kernel_size=3, padding=1), Tensor.relu,
+        lambda x: x.max_pool2d(kernel_size=3, stride=2),
+        lambda x: x.flatten(1),
+        lambda x: x.dropout(0.5),
+        Linear(512*3*3, 4096), Tensor.relu,
+        lambda x: x.dropout(0.5),
+        Linear(4096, 4096), Tensor.relu,
+        Linear(4096, 10), Tensor.relu,
+        lambda x: x.log_softmax(axis=1)]
 
     def __call__(self, x: Tensor) -> Tensor:
-        x = self.conv1(x).relu()
-        x = x.max_pool2d(kernel_size=3, stride=2)
-        # x = x.float()
-        x = self.bn1(x)
-        x = self.conv2(x).relu()
-        x = x.max_pool2d(kernel_size=3, stride=2)
-        # x = x.float()
-        x = self.bn2(x)
-        x = self.conv3(x).relu()
-        x = self.conv4(x).relu()
-        x = self.conv5(x).relu()
-        x = x.max_pool2d(kernel_size=3, stride=2)
-        # x = x.reshape(shape=[x.shape[0], -1])
-        x = x.flatten(1)
-        x = x.dropout(0.5)
-        x = self.fc1(x).relu()
-        x = x.dropout(0.5)
-        x = self.fc2(x).relu()
-        x = self.fc3(x).relu()
-        return x.log_softmax(axis=1)
+        return x.sequential(self.layers)
 
 if __name__ == "__main__":
     model = AlexNet()
@@ -62,7 +54,7 @@ if __name__ == "__main__":
     X_test, Y_test = X_test.cast(dtypes.default_float), Y_test.cast(dtypes.default_float)
 
     @TinyJit
-    def train_step():
+    def train_step() -> Tuple[Tensor, Tensor]:
         with Tensor.train():
             opt.zero_grad()
 
@@ -77,7 +69,7 @@ if __name__ == "__main__":
             opt.step()
 
             acc = (out.argmax(axis=-1) == labels).mean()
-            return [loss, acc]
+            return loss.realize(), acc.realize()
 
     for round in range(10):
         opt = optim.SGD(get_parameters(model), lr=lr, momentum=0.9, weight_decay=0.0005)
@@ -87,7 +79,7 @@ if __name__ == "__main__":
             GlobalCounters.reset()
             cl = time.monotonic()
             loss, acc = train_step()
-            t.set_description(f"loss: {loss.item():6.2f} accuracy: {acc.item():5.2f} %{GlobalCounters.global_ops*1e-9/(cl-st):9.2f} GFLOPS")
+            t.set_description(f"loss: {loss.numpy():6.2f} accuracy: {acc.numpy():5.2f} %{GlobalCounters.global_ops*1e-9/(cl-st):9.2f} GFLOPS")
             st = cl
         # learning rate divided by 10 3-times in the original paper
         lr *= 0.5
