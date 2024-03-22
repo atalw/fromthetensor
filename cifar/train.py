@@ -13,7 +13,7 @@ from tinygrad.helpers import CI
 
 # https://proceedings.neurips.cc/paper_files/paper/2012/file/c399862d3b9d6b76c8436e924a68c45b-Paper.pdf
 # adjusted values for 32x32 input size
-class AlexNet():
+class AlexNet:
     def __init__(self):
         self.layers = [
         Conv2d(3, 32, kernel_size=1, bias=False), Tensor.relu,
