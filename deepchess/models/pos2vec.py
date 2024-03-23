@@ -1,3 +1,4 @@
+from models.batchnorm import BatchNorm1d
 from tinygrad import Tensor, nn
 
 hyp = {
@@ -13,32 +14,41 @@ class Pos2Vec:
     if level >= 1:
       self.level1 = [
         nn.Linear(773, 600),
+        BatchNorm1d(600),
         lambda x: x.relu(),
         nn.Linear(600, 773),
+        BatchNorm1d(773),
       ]
     if level >= 2:
       self.fc1 = nn.Linear(773, 600)
       self.level2 = [
         nn.Linear(600, 400),
+        BatchNorm1d(400),
         lambda x: x.relu(),
         nn.Linear(400, 600),
+        BatchNorm1d(600),
       ]
     if level >= 3:
       self.fc2 = nn.Linear(600, 400)
       self.level3 = [
         nn.Linear(400, 200),
+        BatchNorm1d(200),
         lambda x: x.relu(),
         nn.Linear(200, 400),
+        BatchNorm1d(400),
       ]
     if level >= 4:
       self.fc3 = nn.Linear(400, 200)
       self.level4 = [
         nn.Linear(200, 100),
+        BatchNorm1d(100),
         lambda x: x.relu(),
         nn.Linear(100, 200),
+        BatchNorm1d(200),
       ]
     if level >= 5:
       self.fc4 = nn.Linear(200, 100)
+      self.bn4 = BatchNorm1d(100)
 
   # forward autoencode pass
   def __call__(self, x: Tensor, level=5) -> Tensor:
@@ -58,7 +68,8 @@ class Pos2Vec:
       return x.sequential(self.level4)
     elif level == 5:
       x = self.__call__(x, 4).relu()
-      x = self.fc4(x).sigmoid()
+      x = self.fc4(x)
+      x = self.bn4(x).sigmoid()
       return x
   
   # returns expected output for each level (without autoencode)

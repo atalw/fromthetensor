@@ -10,12 +10,13 @@ from tqdm import trange
 
 def load_data():
   print("loading data")
-  dat = np.load("data/dataset_100k.npz")
-  # np.random.shuffle(dat)
+  dat = np.load("data/dataset_1k.npz")
   ratio = 0.8
   X, Y = dat['arr_0'], dat['arr_1']
   X_train, X_test = X[:int(len(X)*ratio)], X[int(len(X)*ratio):]
   Y_train, Y_test = Y[:int(len(Y)*ratio)], Y[int(len(Y)*ratio):]
+  # X_train = Tensor(X_train, dtype=dtypes.float32).reshape(-1, 1, 1, 773)
+  # X_test = Tensor(X_test, dtype=dtypes.float32).reshape(-1, 1, 1, 773)
   X_train = Tensor(X_train, dtype=dtypes.float32)
   X_test = Tensor(X_test, dtype=dtypes.float32)
   Y_train = Tensor(Y_train, dtype=dtypes.float32).unsqueeze(-1)
@@ -30,7 +31,7 @@ def train_step(level) -> Tensor:
     target = model.expected_output(batch, level)
 
     out = model(batch, level)
-    loss = out.sub(target).square().mean().sqrt()
+    loss = out.sub(target).square().mean()
 
     opt.zero_grad()
     loss.backward()

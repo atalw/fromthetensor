@@ -12,25 +12,20 @@ from tqdm import trange
 
 def load_data():
   print("loading data")
-  dat = np.load("data/dataset_1k.npz")
+  dat = np.load("data/dataset_100k.npz")
   ratio = 0.8
   X, Y = dat['arr_0'], dat['arr_1']
   X, Y = generate_win_lose_pairs(list(zip(X, Y)))
   X_train, X_test = X[:int(len(X)*ratio)], X[int(len(X)*ratio):]
   Y_train, Y_test = Y[:int(len(Y)*ratio)], Y[int(len(Y)*ratio):]
+  # X_train = Tensor(X_train, dtype=dtypes.float32).reshape(-1, 1, 2, 773)
+  # X_test = Tensor(X_test, dtype=dtypes.float32).reshape(-1, 1, 2, 773)
   X_train = Tensor(X_train, dtype=dtypes.float32)
   X_test = Tensor(X_test, dtype=dtypes.float32)
   Y_train = Tensor(Y_train, dtype=dtypes.float32).reshape([-1, 2])
   Y_test = Tensor(Y_test, dtype=dtypes.float32).reshape([-1, 2])
-  print(X_train.shape, Y_train.shape, Y_train[3].numpy())
+  print(X_train.shape, Y_train.shape)
   return X_train, Y_train, X_test, Y_test
-
-# def binary_cross_entropy(preds, y):
-#     loss = (-y*preds.log() - (1-y)*(1-preds).log()).mean()
-#     print("shappeeeeessss")
-#     print(preds.numpy(), preds.log().numpy())
-#     print("loss", loss.numpy())
-#     return loss
 
 def generate_win_lose_pairs(XY):
   # input -> [(pos, 0/1), ...]
@@ -55,18 +50,15 @@ def train_step() -> Tuple[Tensor, Tensor]:
   with Tensor.train():
     sample = Tensor.randint(BS, high=X_train.shape[0])
     batches = X_train[sample]
-    print(batches.shape)
     batch_one, batch_two = batches.split(1, dim=1)
     labels = Y_train[sample]
 
     # according to the paper, pos2vec is part of siamese and weights for pos2vec are updated alongside siamese 
-    out_one = pos2vec(batch_one)
-    out_two = pos2vec(batch_two)
+    out_one = pos2vec(batch_one.reshape(-1, 773))
+    out_two = pos2vec(batch_two.reshape(-1, 773))
 
-    input = Tensor(np.concatenate((out_one.numpy(), out_two.numpy()), axis=-1))
-    print("inputssss", input.shape, input[0].numpy())
+    input = Tensor(np.concatenate((out_one.numpy(), out_two.numpy()), axis=-1)).reshape(-1, 200)
     out = model(input).reshape(-1, 2)
-    print("outputsss", out[0].numpy(), labels[0].numpy())
 
     loss = out.binary_crossentropy_logits(labels)
 
@@ -84,11 +76,11 @@ def evaluate(model, X_test, Y_test, BS=128):
     Y_test_preds_out = np.zeros(list(Y_test.shape))
     for i in trange((len(Y_test)-1)//BS+1):
       x = Tensor(X_test[i*BS:(i+1)*BS])
-      batch_one, batch_two = x.split(1, dim=2)
+      batch_one, batch_two = x.split(1, dim=1)
 
-      out_one = pos2vec(batch_one)
-      out_two = pos2vec(batch_two)
-      input = Tensor(np.concatenate((out_one.numpy(), out_two.numpy()), axis=2))
+      out_one = pos2vec(batch_one.reshape(-1, 773))
+      out_two = pos2vec(batch_two.reshape(-1, 773))
+      input = Tensor(np.concatenate((out_one.numpy(), out_two.numpy()), axis=-1)).reshape(-1, 200)
       out = model(input).reshape(-1, 2)
 
       Y_test_preds_out[i*BS:(i+1)*BS] = out.numpy()
