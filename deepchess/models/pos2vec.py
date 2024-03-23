@@ -9,7 +9,7 @@ hyp = {
 }
 
 class Pos2Vec:
-  def __init__(self, level):
+  def __init__(self, level=5):
     if level >= 1:
       self.level1 = [
         nn.Linear(773, 600),
@@ -41,7 +41,7 @@ class Pos2Vec:
       self.fc4 = nn.Linear(200, 100)
 
   # forward autoencode pass
-  def __call__(self, x: Tensor, level) -> Tensor:
+  def __call__(self, x: Tensor, level=5) -> Tensor:
     if level == 1:
       return x.sequential(self.level1)
     elif level == 2:
@@ -58,7 +58,7 @@ class Pos2Vec:
       return x.sequential(self.level4)
     elif level == 5:
       x = self.__call__(x, 4).relu()
-      x = self.fc4(x)
+      x = self.fc4(x).sigmoid()
       return x
   
   # returns expected output for each level (without autoencode)

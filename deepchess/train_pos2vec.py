@@ -9,7 +9,8 @@ import models.pos2vec as autoencoder
 from tqdm import trange
 
 def load_data():
-  dat = np.load("data/dataset_1k.npz")
+  print("loading data")
+  dat = np.load("data/dataset_100k.npz")
   # np.random.shuffle(dat)
   ratio = 0.8
   X, Y = dat['arr_0'], dat['arr_1']
@@ -22,7 +23,7 @@ def load_data():
   return X_train, Y_train, X_test, Y_test
 
 @TinyJit
-def train_step(level) -> Tuple[Tensor, Tensor]:
+def train_step(level) -> Tensor:
   with Tensor.train():
     sample = Tensor.randint(BS, high=X_train.shape[0])
     batch = X_train[sample]
