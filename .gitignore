@@ -1,1 +1,5 @@
-deepchess/data/**
+.DS_store
+__pycache__/
+
+deepchess/data/
+deepchess/ckpts/
