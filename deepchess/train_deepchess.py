@@ -12,20 +12,20 @@ from tqdm import trange
 
 def load_data():
   print("loading data")
-  dat = np.load("data/dataset_100k.npz")
+  dat = np.load("data/dataset_1k.npz")
+  return dat['arr_0'], dat['arr_1']
+
+def generate_new_dataset(X, Y):
+  x, y = generate_win_lose_pairs(list(zip(X, Y)))
   ratio = 0.8
-  X, Y = dat['arr_0'], dat['arr_1']
-  X, Y = generate_win_lose_pairs(list(zip(X, Y)))
-  X_train, X_test = X[:int(len(X)*ratio)], X[int(len(X)*ratio):]
-  Y_train, Y_test = Y[:int(len(Y)*ratio)], Y[int(len(Y)*ratio):]
-  # X_train = Tensor(X_train, dtype=dtypes.float32).reshape(-1, 1, 2, 773)
-  # X_test = Tensor(X_test, dtype=dtypes.float32).reshape(-1, 1, 2, 773)
+  X_train, X_test = x[:int(len(x)*ratio)], x[int(len(x)*ratio):]
+  Y_train, Y_test = y[:int(len(y)*ratio)], y[int(len(y)*ratio):]
   X_train = Tensor(X_train, dtype=dtypes.float32)
   X_test = Tensor(X_test, dtype=dtypes.float32)
   Y_train = Tensor(Y_train, dtype=dtypes.float32).reshape([-1, 2])
   Y_test = Tensor(Y_test, dtype=dtypes.float32).reshape([-1, 2])
-  print(X_train.shape, Y_train.shape)
   return X_train, Y_train, X_test, Y_test
+
 
 def generate_win_lose_pairs(XY):
   # input -> [(pos, 0/1), ...]
@@ -45,8 +45,8 @@ def generate_win_lose_pairs(XY):
       y.append((y2, y1))
   return x, y
 
-@TinyJit
-def train_step() -> Tuple[Tensor, Tensor]:
+# @TinyJit
+def train_step(X_train, Y_train) -> Tuple[Tensor, Tensor]:
   with Tensor.train():
     sample = Tensor.randint(BS, high=X_train.shape[0])
     batches = X_train[sample]
@@ -54,19 +54,19 @@ def train_step() -> Tuple[Tensor, Tensor]:
     labels = Y_train[sample]
 
     # according to the paper, pos2vec is part of siamese and weights for pos2vec are updated alongside siamese 
-    out_one = pos2vec(batch_one.reshape(-1, 773))
-    out_two = pos2vec(batch_two.reshape(-1, 773))
+    out_one = pos2vec.encode(batch_one.reshape(-1, 773))
+    out_two = pos2vec.encode(batch_two.reshape(-1, 773))
+    input = Tensor(np.concatenate((out_one.numpy(), out_two.numpy()), axis=-1))
 
-    input = Tensor(np.concatenate((out_one.numpy(), out_two.numpy()), axis=-1)).reshape(-1, 200)
     out = model(input).reshape(-1, 2)
 
-    loss = out.binary_crossentropy_logits(labels)
+    loss = out.binary_crossentropy(labels)
 
     opt.zero_grad()
     loss.backward()
     opt.step()
 
-    acc = (out.argmax(axis=-1) == labels.argmax(axis=-1)).float().mean()
+    acc = (out.argmax(axis=-1) == labels.argmax(axis=-1)).mean()
     return loss.realize(), acc.realize()
 
 @TinyJit
@@ -78,14 +78,14 @@ def evaluate(model, X_test, Y_test, BS=128):
       x = Tensor(X_test[i*BS:(i+1)*BS])
       batch_one, batch_two = x.split(1, dim=1)
 
-      out_one = pos2vec(batch_one.reshape(-1, 773))
-      out_two = pos2vec(batch_two.reshape(-1, 773))
+      out_one = pos2vec.encode(batch_one.reshape(-1, 773))
+      out_two = pos2vec.encode(batch_two.reshape(-1, 773))
       input = Tensor(np.concatenate((out_one.numpy(), out_two.numpy()), axis=-1)).reshape(-1, 200)
-      out = model(input).reshape(-1, 2)
 
+      out = model(input)
       Y_test_preds_out[i*BS:(i+1)*BS] = out.numpy()
-    Y_test_preds = np.argmax(Y_test_preds_out, axis=-1)
-    return (Y_test.argmax(axis=-1) == Y_test_preds).mean()
+
+    return  ((Y_test_preds_out.argmax(axis=-1)) == Y_test.argmax(axis=-1)).mean()
 
   acc = numpy_eval(Y_test)
   print("test set accuracy is %f" % acc)
@@ -93,19 +93,20 @@ def evaluate(model, X_test, Y_test, BS=128):
 
 if __name__ == "__main__":
   BS = 128
+  X, Y = load_data()
   pos2vec = pos2vec_model.Pos2Vec()
   load_state_dict(pos2vec, safe_load("./ckpts/pos2vec.safe"))
   model = siamese.Siamese()
-  opt = optim.SGD(get_parameters(model), lr=siamese.hyp['opt']['lr'])
-  X_train, Y_train, X_test, Y_test = load_data()
+  opt = optim.Adam(get_parameters(model), lr=siamese.hyp['opt']['lr'])
 
   st = time.monotonic()
 
   for i in (t := trange(siamese.hyp['epochs'])):
+    X_train, Y_train, X_test, Y_test = generate_new_dataset(X, Y)
     GlobalCounters.reset()
     cl = time.monotonic()
-    loss, acc = train_step()
-    t.set_description(f"lr: {opt.lr.item():9.7f} loss: {loss.numpy():4.2f} acc: {acc.numpy():5.2f}% {GlobalCounters.global_ops*1e-9/(cl-st):9.2f} GFLOPS")
+    loss, acc = train_step(X_train, Y_train)
+    t.set_description(f"lr: {opt.lr.item():9.9f} loss: {loss.numpy():4.2f} acc: {acc.numpy():5.2f}% {GlobalCounters.global_ops*1e-9/(cl-st):9.2f} GFLOPS")
     opt.lr.assign(opt.lr * siamese.hyp['opt']['lr_decay'])
     st = cl
   

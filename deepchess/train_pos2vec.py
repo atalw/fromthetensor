@@ -10,7 +10,7 @@ from tqdm import trange
 
 def load_data():
   print("loading data")
-  dat = np.load("data/dataset_1k.npz")
+  dat = np.load("data/dataset_100k.npz")
   ratio = 0.8
   X, Y = dat['arr_0'], dat['arr_1']
   X_train, X_test = X[:int(len(X)*ratio)], X[int(len(X)*ratio):]
@@ -23,15 +23,14 @@ def load_data():
   Y_test = Tensor(Y_test, dtype=dtypes.float32).unsqueeze(-1)
   return X_train, Y_train, X_test, Y_test
 
-@TinyJit
-def train_step(level) -> Tensor:
+# @TinyJit
+def train_step() -> Tensor:
   with Tensor.train():
     sample = Tensor.randint(BS, high=X_train.shape[0])
     batch = X_train[sample]
-    target = model.expected_output(batch, level)
 
-    out = model(batch, level)
-    loss = out.sub(target).square().mean()
+    recon_batch, _ = model(batch)
+    loss = recon_batch.binary_crossentropy(batch)
 
     opt.zero_grad()
     loss.backward()
@@ -41,8 +40,7 @@ def train_step(level) -> Tensor:
 
 if __name__ == "__main__":
   BS = 128
-  autoencoder_level = 5
-  model = autoencoder.Pos2Vec(autoencoder_level)
+  model = autoencoder.Pos2Vec()
   opt = optim.SGD(get_parameters(model), lr=autoencoder.hyp['opt']['lr'])
   X_train, Y_train, X_test, Y_test = load_data()
 
@@ -51,7 +49,7 @@ if __name__ == "__main__":
   for i in (t := trange(autoencoder.hyp['epochs'])):
     GlobalCounters.reset()
     cl = time.monotonic()
-    loss = train_step(level=autoencoder_level)
+    loss = train_step()
     t.set_description(f"lr: {opt.lr.item():9.7f} loss: {loss.numpy():4.2f} {GlobalCounters.global_ops*1e-9/(cl-st):9.2f} GFLOPS")
     opt.lr.assign(opt.lr * autoencoder.hyp['opt']['lr_decay'])
     st = cl

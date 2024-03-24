@@ -1,4 +1,3 @@
-from models.batchnorm import BatchNorm1d
 from tinygrad import Tensor, nn
 
 hyp = {
@@ -14,17 +13,12 @@ class Siamese:
   def __init__(self):
     self.layers = [
       nn.Linear(200, 400),
-      BatchNorm1d(400),
-      lambda x: x.relu(),
+      lambda x: x.leakyrelu(),
       nn.Linear(400, 200),
-      BatchNorm1d(200),
-      lambda x: x.relu(),
+      lambda x: x.leakyrelu(),
       nn.Linear(200, 100),
-      BatchNorm1d(100),
-      lambda x: x.relu(),
+      lambda x: x.leakyrelu(),
       nn.Linear(100, 2),
-      BatchNorm1d(2),
-      # lambda x: x.relu(),
       lambda x: x.sigmoid(),
     ]
 

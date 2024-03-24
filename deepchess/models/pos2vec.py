@@ -1,4 +1,3 @@
-from models.batchnorm import BatchNorm1d
 from tinygrad import Tensor, nn
 
 hyp = {
@@ -10,83 +9,36 @@ hyp = {
 }
 
 class Pos2Vec:
-  def __init__(self, level=5):
-    if level >= 1:
-      self.level1 = [
-        nn.Linear(773, 600),
-        BatchNorm1d(600),
-        lambda x: x.relu(),
-        nn.Linear(600, 773),
-        BatchNorm1d(773),
-      ]
-    if level >= 2:
-      self.fc1 = nn.Linear(773, 600)
-      self.level2 = [
-        nn.Linear(600, 400),
-        BatchNorm1d(400),
-        lambda x: x.relu(),
-        nn.Linear(400, 600),
-        BatchNorm1d(600),
-      ]
-    if level >= 3:
-      self.fc2 = nn.Linear(600, 400)
-      self.level3 = [
-        nn.Linear(400, 200),
-        BatchNorm1d(200),
-        lambda x: x.relu(),
-        nn.Linear(200, 400),
-        BatchNorm1d(400),
-      ]
-    if level >= 4:
-      self.fc3 = nn.Linear(400, 200)
-      self.level4 = [
-        nn.Linear(200, 100),
-        BatchNorm1d(100),
-        lambda x: x.relu(),
-        nn.Linear(100, 200),
-        BatchNorm1d(200),
-      ]
-    if level >= 5:
-      self.fc4 = nn.Linear(200, 100)
-      self.bn4 = BatchNorm1d(100)
+  def __init__(self):
+    self.encode_layers = [
+      nn.Linear(773, 600),
+      lambda x: x.relu(),
+      nn.Linear(600, 400),
+      lambda x: x.relu(),
+      nn.Linear(400, 200),
+      lambda x: x.relu(),
+      nn.Linear(200, 100),
+      lambda x: x.relu(),
+    ]
+
+    self.decode_layers = [
+      nn.Linear(100, 200),
+      lambda x: x.relu(),
+      nn.Linear(200, 400),
+      lambda x: x.relu(),
+      nn.Linear(400, 600),
+      lambda x: x.relu(),
+      nn.Linear(600, 773),
+      lambda x: x.sigmoid()
+    ]
+  
+  def encode(self, x):
+    return x.sequential(self.encode_layers)
+  
+  def decode(self, x):
+    return x.sequential(self.decode_layers)
 
   # forward autoencode pass
   def __call__(self, x: Tensor, level=5) -> Tensor:
-    if level == 1:
-      return x.sequential(self.level1)
-    elif level == 2:
-      x = self.__call__(x, 1).relu()
-      x = self.fc1(x).relu()
-      return x.sequential(self.level2)
-    elif level == 3:
-      x = self.__call__(x, 2).relu()
-      x = self.fc2(x).relu()
-      return x.sequential(self.level3)
-    elif level == 4:
-      x = self.__call__(x, 3).relu()
-      x = self.fc3(x).relu()
-      return x.sequential(self.level4)
-    elif level == 5:
-      x = self.__call__(x, 4).relu()
-      x = self.fc4(x)
-      x = self.bn4(x).sigmoid()
-      return x
-  
-  # returns expected output for each level (without autoencode)
-  # used for calculating loss
-  def expected_output(self, x: Tensor, level) -> Tensor:
-    if level == 1:
-      return x
-    elif level == 2:
-      x = self.expected_output(x, 1)
-      return self.fc1(x)
-    elif level == 3:
-      x = self.expected_output(x, 2)
-      return self.fc2(x)
-    elif level == 4:
-      x = self.expected_output(x, 3)
-      return self.fc3(x)
-    elif level == 5:
-      x = self.expected_output(x, 4)
-      return self.fc4(x)
-
+    enc = self.encode(x)
+    return self.decode(enc), enc
