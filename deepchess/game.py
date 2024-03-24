@@ -13,6 +13,9 @@ def evaluate_pos(x, y):
   # print(out.shape, out.numpy())
   return (x, y) if out[0].numpy() > out[1].numpy() else (y, x)
 
+# position and value cache
+board_v_cache = {}
+
 # traditional alphabeta algorithm stores values in alpha and beta
 # we are storing positions instead (refer paper)
 # fail-soft alpha-beta
@@ -25,10 +28,13 @@ def alphabeta(board: chess.Board, depth, alpha: chess.Board, beta: chess.Board, 
       next_board = copy.copy(board)
       next_board.push(move)
 
+      if next_board.fen() in board_v_cache: return board_v_cache[next_board.fen()]
+
       if v == None: v = alphabeta(next_board, depth-1, alpha, beta, False)
       if alpha == None: alpha = v
 
       v = evaluate_pos(v, alphabeta(next_board, depth-1, alpha, beta, False))[0]
+      board_v_cache[next_board.fen()] = v
       alpha = evaluate_pos(alpha, v)[0]
 
       if beta != None and evaluate_pos(v, beta)[0] == beta:
@@ -40,10 +46,13 @@ def alphabeta(board: chess.Board, depth, alpha: chess.Board, beta: chess.Board, 
       next_board = copy.copy(board)
       next_board.push(move)
 
+      if next_board.fen() in board_v_cache: return board_v_cache[next_board.fen()]
+
       if v == None: v = alphabeta(next_board, depth-1, alpha, beta, True)
       if beta == None: beta = v
 
       v = evaluate_pos(v, alphabeta(next_board, depth-1, alpha, beta, True))[1]
+      board_v_cache[next_board.fen()] = v
       beta = evaluate_pos(beta, v)[1]
 
       if alpha != None and evaluate_pos(v, alpha)[0] == alpha:
@@ -53,7 +62,7 @@ def alphabeta(board: chess.Board, depth, alpha: chess.Board, beta: chess.Board, 
 
 def computer_turn(board: chess.Board):
   alpha, beta, v = None, None, None
-  depth = 4
+  depth = 9
   best_move = None
   print("thinking...")
 
