@@ -12,11 +12,15 @@ from tqdm import trange
 
 def load_data():
   print("loading data")
-  dat = np.load("data/dataset_1k.npz")
-  return dat['arr_0'], dat['arr_1']
+  dat = np.load("data/dataset_100k.npz")
+  X, Y = dat['arr_0'], dat['arr_1']
+  combined = list(zip(X, Y))
+  wins = list(filter(lambda x: x[1] == 1, combined))
+  loses = list(filter(lambda x: x[1] == 0, combined))
+  return wins, loses
 
-def generate_new_dataset(X, Y):
-  x, y = generate_win_lose_pairs(list(zip(X, Y)))
+def generate_new_dataset(wins, loses):
+  x, y = generate_win_lose_pairs(wins, loses)
   ratio = 0.8
   X_train, X_test = x[:int(len(x)*ratio)], x[int(len(x)*ratio):]
   Y_train, Y_test = y[:int(len(y)*ratio)], y[int(len(y)*ratio):]
@@ -26,11 +30,8 @@ def generate_new_dataset(X, Y):
   Y_test = Tensor(Y_test, dtype=dtypes.float32).reshape([-1, 2])
   return X_train, Y_train, X_test, Y_test
 
-
-def generate_win_lose_pairs(XY):
+def generate_win_lose_pairs(wins, loses):
   # input -> [(pos, 0/1), ...]
-  wins = list(filter(lambda x: x[1] == 1, XY))
-  loses = list(filter(lambda x: x[1] == 0, XY))
   random.shuffle(wins)
   random.shuffle(loses)
   x, y = [], []
@@ -93,7 +94,7 @@ def evaluate(model, X_test, Y_test, BS=128):
 
 if __name__ == "__main__":
   BS = 128
-  X, Y = load_data()
+  wins, loses = load_data()
   pos2vec = pos2vec_model.Pos2Vec()
   load_state_dict(pos2vec, safe_load("./ckpts/pos2vec.safe"))
   model = siamese.Siamese()
@@ -102,7 +103,7 @@ if __name__ == "__main__":
   st = time.monotonic()
 
   for i in (t := trange(siamese.hyp['epochs'])):
-    X_train, Y_train, X_test, Y_test = generate_new_dataset(X, Y)
+    X_train, Y_train, X_test, Y_test = generate_new_dataset(wins, loses)
     GlobalCounters.reset()
     cl = time.monotonic()
     loss, acc = train_step(X_train, Y_train)
