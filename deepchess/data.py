@@ -26,7 +26,7 @@ def get_random_positions(game, white_win, count):
   return [serialize(b) for b in random.sample(positions, count)], [int(white_win)]*count
 
 # convert fen to bitboard
-def serialize(board):
+def serialize(board: chess.Board):
   mapping = {'p': 0, 'n': 1, 'b': 2, 'r': 3, 'q': 4, 'k': 5}
 
   # 2 sides, 6 pieces, 64 squares = 2*6*64 = 768 bits
