@@ -1,6 +1,6 @@
 import random
-import math
 import numpy as np
+from tinygrad import Tensor, dtypes
 import chess.pgn
 
 filename = "data/CCRL-4040.[1828834].pgn"
@@ -78,7 +78,42 @@ def get_dataset(n):
       if count >= n: break
     
   return np.array(X), np.array(Y)
-  
+
+def load_data():
+  print("loading data")
+  dat = np.load("data/dataset_1k.npz")
+  X, Y = dat['arr_0'], dat['arr_1']
+  combined = list(zip(X, Y))
+  wins = list(filter(lambda x: x[1] == 1, combined))
+  loses = list(filter(lambda x: x[1] == 0, combined))
+  return wins, loses
+
+def generate_new_dataset(wins, loses):
+  x, y = generate_win_lose_pairs(wins, loses)
+  ratio = 0.8
+  X_train, X_test = x[:int(len(x)*ratio)], x[int(len(x)*ratio):]
+  Y_train, Y_test = y[:int(len(y)*ratio)], y[int(len(y)*ratio):]
+  X_train = Tensor(X_train, dtype=dtypes.float32)
+  X_test = Tensor(X_test, dtype=dtypes.float32)
+  Y_train = Tensor(Y_train, dtype=dtypes.float32).reshape([-1, 2])
+  Y_test = Tensor(Y_test, dtype=dtypes.float32).reshape([-1, 2])
+  return X_train, Y_train, X_test, Y_test
+
+def generate_win_lose_pairs(wins, loses):
+  random.shuffle(wins)
+  random.shuffle(loses)
+  x, y = [], []
+  for i in range(min(len(wins), len(loses))):
+    x1, y1 = wins[i]
+    x2, y2 = loses[i]
+    if random.random() < 0.5:
+      x.append((x1, x2))
+      y.append((y1, y2))
+    else:
+      x.append((x2, x1))
+      y.append((y2, y1))
+  return x, y
+
 if __name__ == "__main__":
   X, Y = get_dataset(1e5)
   np.savez("data/dataset_100k.npz", X, Y)
