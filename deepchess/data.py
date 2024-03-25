@@ -3,27 +3,41 @@ import numpy as np
 from tinygrad import Tensor, dtypes
 import chess.pgn
 
-filename = "data/CCRL-4040.[1828834].pgn"
+def load_fen_data():
+  print("loading data")
+  dat = np.load(filename_fen)
+  X, Y = dat['arr_0'], dat['arr_1']
+  combined = list(zip(X, Y))
+  wins = list(filter(lambda x: x[1] == 1, combined))
+  loses = list(filter(lambda x: x[1] == 0, combined))
+  return wins, loses
 
-def get_random_positions(game, white_win, count):
-  board = game.board()
-  ignore_moves = 5
-  positions = []
+def generate_new_pairs(wins, loses):
+  x, y = _generate_new_pairs(wins, loses)
+  ratio = 0.8
+  X_train, X_test = x[:int(len(x)*ratio)], x[int(len(x)*ratio):]
+  Y_train, Y_test = y[:int(len(y)*ratio)], y[int(len(y)*ratio):]
+  X_train = Tensor(X_train, dtype=dtypes.float32)
+  X_test = Tensor(X_test, dtype=dtypes.float32)
+  Y_train = Tensor(Y_train, dtype=dtypes.float32).reshape([-1, 2])
+  Y_test = Tensor(Y_test, dtype=dtypes.float32).reshape([-1, 2])
+  return X_train, Y_train, X_test, Y_test
 
-  for i, move in enumerate(game.mainline_moves()):
-    # cannot be from first 5 moves
-    if i < 5:
-      board.push(move)
-      continue
-
-    # cannot be capture move
-    if not board.is_capture(move): 
-      board.push(move)
-      positions.append(board)
+def _generate_new_pairs(wins, loses):
+  random.shuffle(wins)
+  random.shuffle(loses)
+  assert len(wins) > pair_count and len(loses) > pair_count
+  x, y = [], []
+  for i in range(pair_count):
+    x1, y1 = wins[i]
+    x2, y2 = loses[i]
+    if random.random() < 0.5:
+      x.append((x1, x2))
+      y.append((y1, y2))
     else:
-      board.push(move)
-  
-  return [serialize(b) for b in random.sample(positions, count)], [int(white_win)]*count
+      x.append((x2, x1))
+      y.append((y2, y1))
+  return x, y
 
 # convert fen to bitboard
 def serialize(board: chess.Board):
@@ -46,12 +60,12 @@ def serialize(board: chess.Board):
   bitboard[-5] = int(board.has_queenside_castling_rights(False))
 
   return bitboard
-  
-def get_dataset(n):
+
+def generate_fen_dataset(n):
   count = 0
   X, Y = [], []
 
-  with open(filename) as f:
+  with open(filename_pgn) as f:
     while 1:
       try:
         game = chess.pgn.read_game(f)
@@ -77,43 +91,35 @@ def get_dataset(n):
       count += 1
       if count >= n: break
     
-  return np.array(X), np.array(Y)
+  X, Y = np.array(X), np.array(Y)
+  np.save(f"{filename_fen}_X", X)
+  np.save(f"{filename_fen}_Y", Y)
+  # np.savez(filename_fen, X, Y)
+  print(f"games saved to {filename_fen}")
 
-def load_data():
-  print("loading data")
-  dat = np.load("data/dataset_1k.npz")
-  X, Y = dat['arr_0'], dat['arr_1']
-  combined = list(zip(X, Y))
-  wins = list(filter(lambda x: x[1] == 1, combined))
-  loses = list(filter(lambda x: x[1] == 0, combined))
-  return wins, loses
+def get_random_positions(game, white_win, count):
+  board = game.board()
+  ignore_moves = 5
+  positions = []
 
-def generate_new_dataset(wins, loses):
-  x, y = generate_win_lose_pairs(wins, loses)
-  ratio = 0.8
-  X_train, X_test = x[:int(len(x)*ratio)], x[int(len(x)*ratio):]
-  Y_train, Y_test = y[:int(len(y)*ratio)], y[int(len(y)*ratio):]
-  X_train = Tensor(X_train, dtype=dtypes.float32)
-  X_test = Tensor(X_test, dtype=dtypes.float32)
-  Y_train = Tensor(Y_train, dtype=dtypes.float32).reshape([-1, 2])
-  Y_test = Tensor(Y_test, dtype=dtypes.float32).reshape([-1, 2])
-  return X_train, Y_train, X_test, Y_test
+  for i, move in enumerate(game.mainline_moves()):
+    # cannot be from first 5 moves
+    if i < 5:
+      board.push(move)
+      continue
 
-def generate_win_lose_pairs(wins, loses):
-  random.shuffle(wins)
-  random.shuffle(loses)
-  x, y = [], []
-  for i in range(min(len(wins), len(loses))):
-    x1, y1 = wins[i]
-    x2, y2 = loses[i]
-    if random.random() < 0.5:
-      x.append((x1, x2))
-      y.append((y1, y2))
+    # cannot be capture move
+    if not board.is_capture(move): 
+      board.push(move)
+      positions.append(board)
     else:
-      x.append((x2, x1))
-      y.append((y2, y1))
-  return x, y
+      board.push(move)
+  
+  return [serialize(b) for b in random.sample(positions, count)], [int(white_win)]*count
 
 if __name__ == "__main__":
-  X, Y = get_dataset(1e5)
-  np.savez("data/dataset_100k.npz", X, Y)
+  filename_pgn = "data/CCRL-4040.[1828834].pgn"
+  filename_fen = "data/dataset_500k"
+  n = 1e5 * 5
+  pair_count = 1e5 * 7
+  generate_fen_dataset(1e5 * 5)

@@ -59,7 +59,7 @@ def evaluate(model, X_test, Y_test, BS=128):
 
 if __name__ == "__main__":
   BS = 128
-  wins, loses = data.load_data()
+  wins, loses = data.load_fen_data()
   pos2vec = pos2vec_model.Pos2Vec()
   load_state_dict(pos2vec, safe_load("./ckpts/pos2vec.safe"))
   model = siamese.Siamese()
@@ -68,7 +68,7 @@ if __name__ == "__main__":
   st = time.monotonic()
 
   for i in (t := trange(siamese.hyp['epochs'])):
-    X_train, Y_train, X_test, Y_test = data.generate_new_dataset(wins, loses)
+    X_train, Y_train, X_test, Y_test = data.generate_new_pairs(wins, loses)
     GlobalCounters.reset()
     cl = time.monotonic()
     loss, acc = train_step(X_train, Y_train)

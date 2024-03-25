@@ -62,7 +62,7 @@ def alphabeta(board: chess.Board, depth, alpha: chess.Board, beta: chess.Board, 
 
 def computer_turn(board: chess.Board):
   alpha, beta, v = None, None, None
-  depth = 9
+  depth = 5
   best_move = None
   print("thinking...")
 
@@ -103,6 +103,7 @@ if __name__ == "__main__":
   board = chess.Board()
   while not board.is_game_over():
     print(board)
+    print(board.fen())
     print()
     if n % 2 == 0: board = computer_turn(board)
     else: board = player_turn(board)
