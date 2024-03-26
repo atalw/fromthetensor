@@ -6,8 +6,8 @@ import itertools as it
 import math
 import random
 
-filename_fen = "data/dataset_500k"
-pair_count = 200_000
+filename_fen = "data/dataset_1m"
+pair_count = 400_000
 
 def get_data_count():
   return np.load(f"{filename_fen}_X.npy", mmap_mode='c').shape[0]
@@ -69,8 +69,8 @@ def serialize(board: chess.Board):
 
   return bitboard
 
-def generate_fen_dataset(n):
-  count = 0
+def generate_fen_dataset(num_samples):
+  game_count = 1
   X, Y = [], []
 
   with open(filename_pgn) as f:
@@ -81,31 +81,27 @@ def generate_fen_dataset(n):
         break
 
       if game is None: break
+      game_count += 1
       result = game.headers["Result"]
-      if result == "1-0": # white wins
-        xs, ys = get_random_positions(game, white_win=True, count=10)
-        X.extend(xs)
-        Y.extend(ys)
-      elif result == "0-1": # white loses
-        xs, ys = get_random_positions(game, white_win=False, count=10)
-        X.extend(xs)
-        Y.extend(ys)
-      else: # ignore draw
-        pass
 
-      if count % 100:
-        print(f"parsing game {count}, got {len(X)} samples")
+      if result == "1/2-1/2": continue
 
-      count += 1
-      if count >= n: break
+      xs = get_random_positions(game, count=10)
+      assert len(xs) == 10
+      X.extend(xs)
+      Y.extend([1 if result == "1-0" else 0] * 10)
+
+      if game_count % 100 == 0:
+        print(f"parsing game {game_count}, got {len(Y)} samples")
+
+      if len(Y) >= num_samples: break
     
   X, Y = np.array(X), np.array(Y)
   np.save(f"{filename_fen}_X", X)
   np.save(f"{filename_fen}_Y", Y)
-  # np.savez(filename_fen, X, Y)
   print(f"games saved to {filename_fen}")
 
-def get_random_positions(game, white_win, count):
+def get_random_positions(game, count):
   board = game.board()
   ignore_moves = 5
   positions = []
@@ -123,9 +119,8 @@ def get_random_positions(game, white_win, count):
     else:
       board.push(move)
   
-  return [serialize(b) for b in random.sample(positions, count)], [int(white_win)]*count
+  return [serialize(b) for b in random.sample(positions, count)]
 
 if __name__ == "__main__":
   filename_pgn = "data/CCRL-4040.[1828834].pgn"
-  n = 1e5 * 5
-  generate_fen_dataset(1e5 * 5)
+  generate_fen_dataset(1e5 * 10)

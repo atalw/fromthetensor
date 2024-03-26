@@ -34,13 +34,13 @@ def train_step(X_train, Y_train) -> Tensor:
     return loss.realize()
 
 if __name__ == "__main__":
-  data_chunk_size = 500000
+  data_chunk_size = 500_000
   BS = 128
   epochs = autoencoder.hyp['epochs']
   model = autoencoder.Pos2Vec()
   opt = optim.SGD(get_parameters(model), lr=autoencoder.hyp['opt']['lr'])
-  X_on_disk = np.load("data/dataset_500k_X.npy", mmap_mode='c')
-  Y_on_disk = np.load("data/dataset_500k_Y.npy", mmap_mode='c')
+  X_on_disk = np.load("data/dataset_1m_X.npy", mmap_mode='c')
+  Y_on_disk = np.load("data/dataset_1m_Y.npy", mmap_mode='c')
   chunk = 0
   num_chunks = X_on_disk.shape[0]//data_chunk_size
 
@@ -57,6 +57,6 @@ if __name__ == "__main__":
     opt.lr.assign(opt.lr * autoencoder.hyp['opt']['lr_decay'])
     st = cl
   
-  fn = f"./ckpts/pos2vec_500k.safe"
+  fn = f"./ckpts/pos2vec_1m.safe"
   safe_save(get_state_dict(model), fn)
   print(f" *** Model saved to {fn} ***")
