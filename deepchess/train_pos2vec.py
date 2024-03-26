@@ -10,10 +10,10 @@ import sys
 
 X_on_disk, Y_on_disk = None, None
 
-def load_data(chunk_idx):
+def load_data(chunk_idx, chunk_size):
   print(f"loading chunk {chunk_idx} ({chunk_idx*data_chunk_size})")
-  X = X_on_disk[chunk_idx*data_chunk_size:(chunk_idx+1)*data_chunk_size]
-  Y = Y_on_disk[chunk_idx*data_chunk_size:(chunk_idx+1)*data_chunk_size]
+  X = X_on_disk[chunk_idx*chunk_size:(chunk_idx+1)*chunk_size]
+  Y = Y_on_disk[chunk_idx*chunk_size:(chunk_idx+1)*chunk_size]
   X = Tensor(X, dtype=dtypes.float32)
   Y = Tensor(Y, dtype=dtypes.float32).unsqueeze(-1)
   return X, Y
@@ -48,7 +48,7 @@ if __name__ == "__main__":
 
   for i in (t := trange(epochs)):
     if i == epochs//num_chunks * chunk:
-      X_train, Y_train = load_data(chunk)
+      X_train, Y_train = load_data(chunk, data_chunk_size)
       chunk += 1
     GlobalCounters.reset()
     cl = time.monotonic()

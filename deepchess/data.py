@@ -1,15 +1,24 @@
 import random
 import numpy as np
-from tinygrad import Tensor, dtypes
+from tinygrad import Tensor, dtypes, Device
 import chess.pgn
+import itertools as it
+import math
+import random
 
-def load_fen_data():
-  print("loading data")
-  dat = np.load(filename_fen)
-  X, Y = dat['arr_0'], dat['arr_1']
-  combined = list(zip(X, Y))
-  wins = list(filter(lambda x: x[1] == 1, combined))
-  loses = list(filter(lambda x: x[1] == 0, combined))
+filename_fen = "data/dataset_500k"
+pair_count = 200_000
+
+def get_data_count():
+  return np.load(f"{filename_fen}_X.npy", mmap_mode='c').shape[0]
+
+def load_wins_loses(chunk_idx, chunk_size):
+  print(f"loading chunk {chunk_idx} ({chunk_size*(chunk_idx+1)})")
+  X_on_disk = np.load(f"{filename_fen}_X.npy", mmap_mode='c')
+  Y_on_disk = np.load(f"{filename_fen}_Y.npy", mmap_mode='c')
+  X = X_on_disk[chunk_idx*chunk_size:(chunk_idx+1)*chunk_size]
+  Y = Y_on_disk[chunk_idx*chunk_size:(chunk_idx+1)*chunk_size]
+  wins, loses = X[Y == 1], X[Y == 0]
   return wins, loses
 
 def generate_new_pairs(wins, loses):
@@ -17,26 +26,25 @@ def generate_new_pairs(wins, loses):
   ratio = 0.8
   X_train, X_test = x[:int(len(x)*ratio)], x[int(len(x)*ratio):]
   Y_train, Y_test = y[:int(len(y)*ratio)], y[int(len(y)*ratio):]
-  X_train = Tensor(X_train, dtype=dtypes.float32)
-  X_test = Tensor(X_test, dtype=dtypes.float32)
-  Y_train = Tensor(Y_train, dtype=dtypes.float32).reshape([-1, 2])
-  Y_test = Tensor(Y_test, dtype=dtypes.float32).reshape([-1, 2])
+  X_train = Tensor(X_train, dtype=dtypes.float32, device=Device.DEFAULT)
+  X_test = Tensor(X_test, dtype=dtypes.float32, device=Device.DEFAULT)
+  Y_train = Tensor(Y_train, dtype=dtypes.float32, device=Device.DEFAULT)
+  Y_test = Tensor(Y_test, dtype=dtypes.float32, device=Device.DEFAULT)
   return X_train, Y_train, X_test, Y_test
 
 def _generate_new_pairs(wins, loses):
-  random.shuffle(wins)
-  random.shuffle(loses)
-  assert len(wins) > pair_count and len(loses) > pair_count
+  n, k = min(len(wins), len(loses)), 2 
+  assert math.comb(n, k) > pair_count, f"{len(wins)=} {len(loses)=}"
   x, y = [], []
-  for i in range(pair_count):
-    x1, y1 = wins[i]
-    x2, y2 = loses[i]
+  for _ in range(pair_count):
+    xy1 = wins[np.random.choice(wins.shape[0])]
+    xy2 = loses[np.random.choice(loses.shape[0])]
     if random.random() < 0.5:
-      x.append((x1, x2))
-      y.append((y1, y2))
+      x.append((xy1, xy2))
+      y.append((1, 0))
     else:
-      x.append((x2, x1))
-      y.append((y2, y1))
+      x.append((xy2, xy1))
+      y.append((0, 1))
   return x, y
 
 # convert fen to bitboard
@@ -119,7 +127,5 @@ def get_random_positions(game, white_win, count):
 
 if __name__ == "__main__":
   filename_pgn = "data/CCRL-4040.[1828834].pgn"
-  filename_fen = "data/dataset_500k"
   n = 1e5 * 5
-  pair_count = 1e5 * 7
   generate_fen_dataset(1e5 * 5)
