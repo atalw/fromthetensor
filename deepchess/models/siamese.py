@@ -19,7 +19,6 @@ class Siamese:
       nn.Linear(200, 100),
       lambda x: x.leakyrelu(),
       nn.Linear(100, 2),
-      lambda x: x.sigmoid(),
     ]
 
   

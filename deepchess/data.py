@@ -7,7 +7,8 @@ import math
 import random
 
 filename_fen = "data/dataset_2m"
-pair_count = 400_000
+pair_count = 500_000
+pair_count = 5000
 
 def get_data_count():
   return np.load(f"{filename_fen}_X.npy", mmap_mode='c').shape[0]
@@ -36,8 +37,8 @@ def generate_new_pairs(wins, loses):
   return X2_train, X2_train, Y_train, X1_test, X2_test, Y_test
 
 def _generate_new_pairs(wins, loses):
-  n, k = min(len(wins), len(loses)), 2 
-  assert math.comb(n, k) > pair_count, f"{len(wins)=} {len(loses)=}"
+  # n, k = min(len(wins), len(loses)), 2 
+  # assert math.comb(n, k) > pair_count, f"{len(wins)=} {len(loses)=}"
   x1, x2, y = [], [], []
   batch_size = 1000
   for i in range(pair_count//batch_size):

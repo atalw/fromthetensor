@@ -12,24 +12,22 @@ class Pos2Vec:
   def __init__(self):
     self.encode_layers = [
       nn.Linear(773, 600),
-      lambda x: x.relu(),
+      lambda x: x.leakyrelu(),
       nn.Linear(600, 400),
-      lambda x: x.relu(),
+      lambda x: x.leakyrelu(),
       nn.Linear(400, 200),
-      lambda x: x.relu(),
+      lambda x: x.leakyrelu(),
       nn.Linear(200, 100),
-      lambda x: x.relu(),
     ]
 
     self.decode_layers = [
       nn.Linear(100, 200),
-      lambda x: x.relu(),
+      lambda x: x.leakyrelu(),
       nn.Linear(200, 400),
-      lambda x: x.relu(),
+      lambda x: x.leakyrelu(),
       nn.Linear(400, 600),
-      lambda x: x.relu(),
+      lambda x: x.leakyrelu(),
       nn.Linear(600, 773),
-      lambda x: x.sigmoid()
     ]
   
   def encode(self, x):
