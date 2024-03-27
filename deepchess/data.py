@@ -22,32 +22,37 @@ def load_wins_loses(chunk_idx, chunk_size):
   return wins, loses
 
 def generate_new_pairs(wins, loses):
-  x, y = _generate_new_pairs(wins, loses)
+  x1, x2, y = _generate_new_pairs(wins, loses)
   ratio = 0.8
-  X_train, X_test = x[:int(len(x)*ratio)], x[int(len(x)*ratio):]
+  X1_train, X1_test = x1[:int(len(x1)*ratio)], x1[int(len(x1)*ratio):]
+  X2_train, X2_test = x2[:int(len(x2)*ratio)], x2[int(len(x2)*ratio):]
   Y_train, Y_test = y[:int(len(y)*ratio)], y[int(len(y)*ratio):]
-  X_train = Tensor(X_train, dtype=dtypes.float32, device=Device.DEFAULT)
-  X_test = Tensor(X_test, dtype=dtypes.float32, device=Device.DEFAULT)
+  X1_train = Tensor(X1_train, dtype=dtypes.float32, device=Device.DEFAULT)
+  X2_train = Tensor(X2_train, dtype=dtypes.float32, device=Device.DEFAULT)
+  X1_test = Tensor(X1_test, dtype=dtypes.float32, device=Device.DEFAULT)
+  X2_test = Tensor(X2_test, dtype=dtypes.float32, device=Device.DEFAULT)
   Y_train = Tensor(Y_train, dtype=dtypes.float32, device=Device.DEFAULT)
   Y_test = Tensor(Y_test, dtype=dtypes.float32, device=Device.DEFAULT)
-  return X_train, Y_train, X_test, Y_test
+  return X2_train, X2_train, Y_train, X1_test, X2_test, Y_test
 
 def _generate_new_pairs(wins, loses):
   n, k = min(len(wins), len(loses)), 2 
   assert math.comb(n, k) > pair_count, f"{len(wins)=} {len(loses)=}"
-  x, y = np.empty((pair_count, 2, 773)), np.empty((pair_count, 2))
-  batch_size = 1
+  x1, x2, y = [], [], []
+  batch_size = 1000
   for i in range(pair_count//batch_size):
     wins_batch = wins[np.random.choice(wins.shape[0], size=batch_size)]
     loses_batch = loses[np.random.choice(loses.shape[0], size=batch_size)]
-    start_x, end_x = i*batch_size, (i+1)*batch_size
     if random.random() < 0.5:
-      x[start_x:end_x, :] = np.stack((wins_batch, loses_batch), axis=1)
-      y[start_x:end_x, :] = np.full((batch_size, 2), [1, 0])
+      # list append is faster than np append apparently
+      x1.extend(wins_batch)
+      x2.extend(loses_batch)
+      y.extend([[1, 0]] * batch_size)
     else:
-      x[start_x:end_x, :] = np.stack((loses_batch, wins_batch), axis=1)
-      y[start_x:end_x, :] = np.full((batch_size, 2), [0, 1])
-  return x, y
+      x1.extend(loses_batch)
+      x2.extend(wins_batch)
+      y.extend([[0, 1]] * batch_size)
+  return x1, x2, y
 
 # convert fen to bitboard
 def serialize(board: chess.Board):
