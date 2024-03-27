@@ -32,7 +32,6 @@ def train_step(X1_train, X2_train, Y_train) -> Tuple[Tensor, Tensor]:
     loss.backward()
     opt.step()
 
-    print(out[0].numpy(), labels[0].numpy())
     acc = (out.argmax(axis=-1) == labels.argmax(axis=-1)).mean()
     return loss.realize(), acc.realize()
 
