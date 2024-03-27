@@ -41,4 +41,4 @@ class Pos2Vec:
   # forward autoencode pass
   def __call__(self, x: Tensor, level=5) -> Tensor:
     enc = self.encode(x)
-    return self.decode(enc), enc
+    return self.decode(enc)

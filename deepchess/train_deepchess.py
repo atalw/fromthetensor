@@ -12,7 +12,7 @@ import models.siamese as siamese
 from tqdm import trange
 from tinygrad.helpers import getenv
 
-@TinyJit
+# @TinyJit
 def train_step(X_train, Y_train) -> Tuple[Tensor, Tensor]:
   with Tensor.train():
     sample = Tensor.randint(BS, high=X_train.shape[0])
@@ -25,8 +25,7 @@ def train_step(X_train, Y_train) -> Tuple[Tensor, Tensor]:
     out_two = pos2vec.encode(batch_two.reshape(-1, 773))
     input = Tensor.cat(out_one, out_two, dim=-1)
 
-    out = model(input).reshape(-1, 2)
-
+    out = model(input)
     loss = out.binary_crossentropy(labels)
 
     opt.zero_grad()
@@ -67,7 +66,7 @@ if __name__ == "__main__":
   load_state_dict(pos2vec, safe_load("./ckpts/pos2vec_1m.safe"))
 
   wins, loses = None, None
-  data_chunk_size = 50_000
+  data_chunk_size = 200_000
   num_chunks = data.get_data_count()//data_chunk_size
   chunk = start_epoch//(epochs//num_chunks)
 
@@ -75,8 +74,8 @@ if __name__ == "__main__":
 
   model = siamese.Siamese()
   if start_epoch > 0:
-    load_state_dict(model, safe_load(f"./ckpts/deepchess_1m_400k_epoch_{start_epoch-1}.safe"))
-    wins, loses = data.load_wins_loses(chunk, data_chunk_size)
+    load_state_dict(model, safe_load(f"./ckpts/deepchess_2m_400k_epoch_{start_epoch-1}.safe"))
+    wins, loses = data.load_wins_loses(num_chunks-chunk-1, data_chunk_size)
     X_train, Y_train, X_test, Y_test = data.generate_new_pairs(wins, loses)
     chunk += 1
     learning_rate *= siamese.hyp['opt']['lr_decay']**start_epoch
@@ -87,20 +86,21 @@ if __name__ == "__main__":
 
   for i in (t := trange(start_epoch, epochs)):
     if i == epochs//num_chunks*chunk:
-      wins, loses = data.load_wins_loses(chunk, data_chunk_size)
-      X_train, Y_train, X_test, Y_test = data.generate_new_pairs(wins, loses)
+      # go backwards
+      wins, loses = data.load_wins_loses(num_chunks-chunk-1, data_chunk_size)
       chunk += 1
-      # ideally generate new pairs each iteration but we don't live in an ideal world and we have compute constraints
+    X_train, Y_train, X_test, Y_test = data.generate_new_pairs(wins, loses)
     GlobalCounters.reset()
     cl = time.monotonic()
     loss, acc = train_step(X_train, Y_train)
-    t.set_description(f"loss: {loss.numpy():4.2f} acc: {acc.numpy():5.2f}% {GlobalCounters.global_ops*1e-9/(cl-st):9.2f} GFLOPS")
+    t.set_description(f"lr: {opt.lr.item():9.7f} loss: {loss.numpy():4.2f} acc: {acc.numpy():5.2f}% {GlobalCounters.global_ops*1e-9/(cl-st):9.2f} GFLOPS")
     opt.lr.assign(opt.lr * siamese.hyp['opt']['lr_decay'])
     st = cl
-    safe_save(get_state_dict(model), f"./ckpts/deepchess_1m_400k_epoch_{i}.safe")
+    del X_train, Y_train
+    safe_save(get_state_dict(model), f"./ckpts/deepchess_2m_400k_epoch_{i}.safe")
   
   evaluate(model, X_test.numpy(), Y_test.numpy())
 
-  fn = f"./ckpts/deepchess_1m_400k.safe"
+  fn = f"./ckpts/deepchess_2m_400k.safe"
   safe_save(get_state_dict(model), fn)
   print(f" *** Model saved to {fn} ***")

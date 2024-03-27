@@ -37,7 +37,7 @@ def alphabeta(board: chess.Board, depth, alpha: chess.Board, beta: chess.Board, 
       board_v_cache[next_board.fen()] = v
       alpha = evaluate_pos(alpha, v)[0]
 
-      if beta != None and evaluate_pos(v, beta)[0] == beta:
+      if beta != None and evaluate_pos(v, beta)[0] == v:
         break
     return v
   else:
@@ -55,14 +55,14 @@ def alphabeta(board: chess.Board, depth, alpha: chess.Board, beta: chess.Board, 
       board_v_cache[next_board.fen()] = v
       beta = evaluate_pos(beta, v)[1]
 
-      if alpha != None and evaluate_pos(v, alpha)[0] == alpha:
+      if alpha != None and evaluate_pos(v, alpha)[0] == v:
         break
     return v
 
 
 def computer_turn(board: chess.Board):
   alpha, beta, v = None, None, None
-  depth = 5
+  depth = 4
   best_move = None
   print("thinking...")
 
@@ -97,7 +97,8 @@ def player_turn(board: chess.Board):
 
 if __name__ == "__main__":
   model = distilled_model.Distilled()
-  load_state_dict(model, safe_load("./ckpts/distilled.safe"))
+  load_state_dict(model, safe_load("./ckpts/distilled_1m_final_epoch_850.safe"))
+  # load_state_dict(model, safe_load("./ckpts/distilled.safe"))
 
   n = 0
   board = chess.Board()

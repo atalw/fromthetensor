@@ -6,7 +6,7 @@ import itertools as it
 import math
 import random
 
-filename_fen = "data/dataset_1m"
+filename_fen = "data/dataset_2m"
 pair_count = 400_000
 
 def get_data_count():
@@ -35,16 +35,18 @@ def generate_new_pairs(wins, loses):
 def _generate_new_pairs(wins, loses):
   n, k = min(len(wins), len(loses)), 2 
   assert math.comb(n, k) > pair_count, f"{len(wins)=} {len(loses)=}"
-  x, y = [], []
-  for _ in range(pair_count):
-    xy1 = wins[np.random.choice(wins.shape[0])]
-    xy2 = loses[np.random.choice(loses.shape[0])]
+  x, y = np.empty((pair_count, 2, 773)), np.empty((pair_count, 2))
+  batch_size = 1
+  for i in range(pair_count//batch_size):
+    wins_batch = wins[np.random.choice(wins.shape[0], size=batch_size)]
+    loses_batch = loses[np.random.choice(loses.shape[0], size=batch_size)]
+    start_x, end_x = i*batch_size, (i+1)*batch_size
     if random.random() < 0.5:
-      x.append((xy1, xy2))
-      y.append((1, 0))
+      x[start_x:end_x, :] = np.stack((wins_batch, loses_batch), axis=1)
+      y[start_x:end_x, :] = np.full((batch_size, 2), [1, 0])
     else:
-      x.append((xy2, xy1))
-      y.append((0, 1))
+      x[start_x:end_x, :] = np.stack((loses_batch, wins_batch), axis=1)
+      y[start_x:end_x, :] = np.full((batch_size, 2), [0, 1])
   return x, y
 
 # convert fen to bitboard
@@ -123,4 +125,4 @@ def get_random_positions(game, count):
 
 if __name__ == "__main__":
   filename_pgn = "data/CCRL-4040.[1828834].pgn"
-  generate_fen_dataset(1e5 * 10)
+  generate_fen_dataset(1e6 * 2)

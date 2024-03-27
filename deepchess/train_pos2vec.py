@@ -24,8 +24,8 @@ def train_step(X_train, Y_train) -> Tensor:
     sample = Tensor.randint(BS, high=X_train.shape[0])
     batch = X_train[sample]
 
-    recon_batch, _ = model(batch)
-    loss = recon_batch.binary_crossentropy(batch)
+    decoded_out = model(batch)
+    loss = decoded_out.binary_crossentropy(batch)
 
     opt.zero_grad()
     loss.backward()
