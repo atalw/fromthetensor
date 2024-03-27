@@ -8,7 +8,6 @@ import random
 
 filename_fen = "data/dataset_2m"
 pair_count = 500_000
-pair_count = 5000
 
 def get_data_count():
   return np.load(f"{filename_fen}_X.npy", mmap_mode='c').shape[0]
