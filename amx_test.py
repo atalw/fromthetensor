@@ -7,6 +7,8 @@ from functools import partialmethod
 from tinygrad.dtype import dtypes
 from tinygrad.renderer.llvmir import const
 
+np.set_printoptions(linewidth=160)
+np.set_printoptions(linewidth=1000, threshold=10000000000, suppress=False)
 class AMX:
   @staticmethod
   def nop_op_imm5(op, imm5, builder): builder.asm(ir.FunctionType(ir.VoidType(), []), f".word (0x201000 + ({op} << 5) + {imm5}); amx op {op} imm {imm5}", "", tuple(), True)
@@ -20,7 +22,7 @@ class AMX:
   mac16, fma16, fms16 = partialmethod(op_gpr, 14), partialmethod(op_gpr, 15), partialmethod(op_gpr, 16)
   vecint, vecfp, matint, matfp, genlut = partialmethod(op_gpr, 18), partialmethod(op_gpr, 19), partialmethod(op_gpr, 20), partialmethod(op_gpr, 21), partialmethod(op_gpr, 22)
 
-N = 64
+N = 16
 # na = np.zeros(256, dtype=np.float32)
 na = np.zeros((N, N), dtype=np.float32)
 nb = np.random.randn(N, N).astype(np.float32)
@@ -38,8 +40,26 @@ module = ir.Module(name=__file__)
 func = ir.Function(module, ir.FunctionType(ir.IntType(64), [ir.FloatType().as_pointer()]*3), "amx")
 
 entry = ir.IRBuilder(func.append_basic_block(name="entry"))
+exit = ir.IRBuilder(func.append_basic_block(name="exit"))
 zm, xm, ym = [entry.ptrtoint(func.args[i], ir.IntType(64)) for i in range(3)]
 
+AMX.set(entry)
+
+for i in range(N):
+  AMX.ldx(entry, entry.add(xm, const(i*16*4, dtypes.int64)))
+  AMX.ldy(entry, entry.add(ym, const(i*16*4, dtypes.int64)))
+
+  AMX.fma32(entry, const(0, dtypes.int64))
+
+for i in range(N):
+  AMX.stz(entry, entry.add(zm, const(i*4 << 56 | (i*16*4), dtypes.int64)))
+
+AMX.clr(entry)
+
+entry.branch(exit._block)
+exit.ret(const(0, dtypes.int64))
+
+"""
 loop_1 = ir.IRBuilder(func.append_basic_block(name="loop_y"))
 loop_2 = ir.IRBuilder(func.append_basic_block(name="loop_x"))
 loop_3 = ir.IRBuilder(func.append_basic_block(name="loop_k"))
@@ -95,16 +115,17 @@ loop_3_exit.cbranch(loop_3_exit.icmp_unsigned("==", kp, const(N, dtypes.int64)),
 loop_2_exit.cbranch(loop_2_exit.icmp_unsigned("==", xp, const(N, dtypes.int64)), loop_1_exit._block, loop_2._block)
 loop_1_exit.cbranch(loop_1_exit.icmp_unsigned("==", yp, const(N, dtypes.int64)), exit._block, loop_1._block)
 exit.ret(const(0, dtypes.int64))
+"""
 
 device = LLVMDevice("llvm")
 ir_str = str(module)
 print(ir_str)
 prog = LLVMProgram(device, "amx", LLVMCompiler(device).compile(ir_str))
-
 prog(a, b, c, N**2)
 MallocAllocator.copyout(flat_mv(na.data), a)
 
-# print(na)
 
 comp = (nb.T @ nc).T
 np.testing.assert_allclose(na, comp, atol=1e-4, rtol=1e-5)
+# print(na)
+# print(comp)
