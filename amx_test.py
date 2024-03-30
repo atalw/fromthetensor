@@ -59,28 +59,21 @@ AMX.set(loop_2)
 xptr = loop_3_exit.add(x, loop_3_exit.mul(k, const(N, dtypes.int64)))
 yptr = loop_3_exit.add(y, loop_3_exit.mul(k, const(N, dtypes.int64)))
 
-# if you are okay with the wrong answer, this is faster
-#xptr = loop_3_exit.add(x, loop_3_exit.mul(k, const(32, dtypes.int64)))
-#yptr = loop_3_exit.add(y, loop_3_exit.mul(k, const(32, dtypes.int64)))
-
-# double loads load 32 floats
 AMX.ldx(loop_3_exit, loop_3_exit.add(const(1<<62, dtypes.int64), loop_3_exit.add(xm, loop_3_exit.mul(const(4, dtypes.int64), xptr))))
 AMX.ldy(loop_3_exit, loop_3_exit.add(const(1<<62, dtypes.int64), loop_3_exit.add(ym, loop_3_exit.mul(const(4, dtypes.int64), yptr))))
 
-# <Z row> <X offset> <Y offset>
-AMX.fma32(loop_3_exit, const(0<<20 | (0*16*4)<<10 | (0*16*4), dtypes.int64))
-AMX.fma32(loop_3_exit, const(1<<20 | (1*16*4)<<10 | (0*16*4), dtypes.int64))
-AMX.fma32(loop_3_exit, const(2<<20 | (0*16*4)<<10 | (1*16*4), dtypes.int64))
-AMX.fma32(loop_3_exit, const(3<<20 | (1*16*4)<<10 | (1*16*4), dtypes.int64))
+AMX.fma32(loop_3_exit, const(0 << 20 | (0*16*4) << 10 | (0*16*4), dtypes.int64))
+AMX.fma32(loop_3_exit, const(1 << 20 | (1*16*4) << 10 | (0*16*4), dtypes.int64))
+AMX.fma32(loop_3_exit, const(2 << 20 | (0*16*4) << 10 | (1*16*4), dtypes.int64))
+AMX.fma32(loop_3_exit, const(3 << 20 | (1*16*4) << 10 | (1*16*4), dtypes.int64))
 
-# store
-gptr = loop_2_exit.mul(loop_2_exit.add(loop_2.mul(y, const(N, dtypes.int64)), x), const(4, dtypes.int64))
+gptr = loop_2_exit.mul(const(4, dtypes.int64), loop_2_exit.add(x, loop_2_exit.mul(y, const(N, dtypes.int64))))
 zmp = loop_2_exit.add(zm, gptr)
 for j in range(2):
   for r in range(16):
     z_row = j*2
     ptr = ((j*16)+r)*N
-    AMX.stz(loop_2_exit, loop_2_exit.add(zmp, const(1 << 62 | ((r*4+z_row) << 56) | ptr*4, dtypes.int64)))
+    AMX.stz(loop_2_exit, loop_2_exit.add(zmp, const(1<<62 | ((r*4+z_row)<<56) | ptr*4, dtypes.int64)))
 AMX.clr(loop_2_exit)
 
 yp = loop_1_exit.add(y, const(32, dtypes.int64))
@@ -111,7 +104,7 @@ prog = LLVMProgram(device, "amx", LLVMCompiler(device).compile(ir_str))
 prog(a, b, c, N**2)
 MallocAllocator.copyout(flat_mv(na.data), a)
 
-print(na)
+# print(na)
 
 comp = (nb.T @ nc).T
 np.testing.assert_allclose(na, comp, atol=1e-4, rtol=1e-5)
