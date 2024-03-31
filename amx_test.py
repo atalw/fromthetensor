@@ -38,14 +38,14 @@ def matmul_16():
     [1, 1, 1, 1],
     [0, 0, 0, 0],
   ]).astype(np.float32)
-  c = [
-    [1, 1, 1, 1],
-    [0, 0, 0, 0],
-    [1, 1, 1, 1],
-    [0, 0, 0, 0]
-  ]
+  # c = [
+  #   [1, 1, 1, 1],
+  #   [0, 0, 0, 0],
+  #   [1, 1, 1, 1],
+  #   [0, 0, 0, 0]
+  # ]
   comp = (nb @ nc)
-  nb = nb.T.copy()
+  # nb = nb.T.copy()
 
   a = MallocAllocator.alloc(na.size * np.dtype(np.float32).itemsize)
   b = MallocAllocator.alloc(nb.size * np.dtype(np.float32).itemsize)
@@ -61,9 +61,10 @@ def matmul_16():
 
   AMX.set(entry)
 
-  for i in range(N):
-    AMX.ldx(entry, entry.add(xm, const(i*N*4, dtypes.int64)))
-    AMX.ldy(entry, entry.add(ym, const(i*N*4, dtypes.int64)))
+  for row in range(N):
+    AMX.ldx(entry, entry.add(xm, const(row*N*4, dtypes.int64)))
+    for col in range(N):
+      AMX.ldy(entry, entry.add(const((0 << 62) | (col << 56), dtypes.int64), entry.add(ym, const((row*N*4) + (col+0), dtypes.int64))))
 
     AMX.fma32(entry, const(0, dtypes.int64))
 
@@ -83,15 +84,17 @@ def matmul_16():
   return na, comp
 
 def matmul_N_LLVM():
-  N = 32
+  N = 512
+  size = np.float32().itemsize
+  count = 512 // 8 // size
+  print(count)
 
   # na = np.zeros(256, dtype=np.float32)
   na = np.zeros((N, N), dtype=np.float32)
   nb = np.random.randn(N, N).astype(np.float32)
   nc = np.random.randn(N, N).astype(np.float32)
 
-  comp = (nb @ nc)
-  nb = nb.T.copy()
+  comp = (nb.T @ nc)
 
   a = MallocAllocator.alloc(na.size * np.dtype(np.float32).itemsize)
   b = MallocAllocator.alloc(nb.size * np.dtype(np.float32).itemsize)
@@ -122,28 +125,30 @@ def matmul_N_LLVM():
   xptr = loop_3_exit.add(x, loop_3_exit.mul(k, const(N, dtypes.int64)))
   yptr = loop_3_exit.add(y, loop_3_exit.mul(k, const(N, dtypes.int64)))
 
-  # double loads load 32 floats
-  AMX.ldx(loop_3_exit, loop_3_exit.add(const(1<<62, dtypes.int64), loop_3_exit.add(xm, loop_3_exit.mul(const(4, dtypes.int64), xptr))))
-  AMX.ldy(loop_3_exit, loop_3_exit.add(const(1<<62, dtypes.int64), loop_3_exit.add(ym, loop_3_exit.mul(const(4, dtypes.int64), yptr))))
+  # double loads load 32 floats (loading into 2 registers, each register is 64 bytes)
+  AMX.ldx(loop_3_exit, loop_3_exit.add(const(1<<62, dtypes.int64), loop_3_exit.add(xm, loop_3_exit.mul(const(size, dtypes.int64), xptr))))
+  AMX.ldy(loop_3_exit, loop_3_exit.add(const(1<<62, dtypes.int64), loop_3_exit.add(ym, loop_3_exit.mul(const(size, dtypes.int64), yptr))))
 
   # <Z row> <X offset> <Y offset>
-  AMX.fma32(loop_3_exit, const(0<<20 | (0*16*4)<<10 | (0*16*4), dtypes.int64))
-  AMX.fma32(loop_3_exit, const(1<<20 | (1*16*4)<<10 | (0*16*4), dtypes.int64))
-  AMX.fma32(loop_3_exit, const(2<<20 | (0*16*4)<<10 | (1*16*4), dtypes.int64))
-  AMX.fma32(loop_3_exit, const(3<<20 | (1*16*4)<<10 | (1*16*4), dtypes.int64))
+  AMX.fma32(loop_3_exit, const(0<<20 | (0*count*size)<<10 | (0*count*size), dtypes.int64))
+  AMX.fma32(loop_3_exit, const(1<<20 | (1*count*size)<<10 | (0*count*size), dtypes.int64))
+  AMX.fma32(loop_3_exit, const(2<<20 | (0*count*size)<<10 | (1*count*size), dtypes.int64))
+  AMX.fma32(loop_3_exit, const(3<<20 | (1*count*size)<<10 | (1*count*size), dtypes.int64))
 
   # store
-  gptr = loop_2_exit.mul(loop_2_exit.add(loop_2.mul(y, const(N, dtypes.int64)), x), const(4, dtypes.int64))
+  # gptr = ((y*N) + x) * size
+  gptr = loop_2_exit.mul(loop_2_exit.add(loop_2.mul(y, const(N, dtypes.int64)), x), const(size, dtypes.int64))
   zmp = loop_2_exit.add(zm, gptr)
   for j in range(2):
-    for r in range(16):
+    for r in range(count):
       z_row = j*2
-      ptr = ((j*16)+r)*N
-      AMX.stz(loop_2_exit, loop_2_exit.add(zmp, const(1 << 62 | ((r*4+z_row) << 56) | ptr*4, dtypes.int64)))
+      ptr = ((j*count)+r)*N*size
+      AMX.stz(loop_2_exit, loop_2_exit.add(zmp, const(1 << 62 | ((r*size+z_row) << 56) | ptr, dtypes.int64)))
   AMX.clr(loop_2_exit)
 
-  yp = loop_1_exit.add(y, const(32, dtypes.int64))
-  xp = loop_2_exit.add(x, const(32, dtypes.int64))
+  # count*2 since we're doing double loads 
+  yp = loop_1_exit.add(y, const(count*2, dtypes.int64))
+  xp = loop_2_exit.add(x, const(count*2, dtypes.int64))
   kp = loop_3_exit.add(k, const(1, dtypes.int64))
 
   y.add_incoming(const(0, dtypes.int64), entry._block)
@@ -167,13 +172,77 @@ def matmul_N_LLVM():
   # print(ir_str)
   prog = LLVMProgram(device, "amx", LLVMCompiler(device).compile(ir_str))
   prog(a, b, c, N**2)
+  print("done")
   MallocAllocator.copyout(flat_mv(na.data), a)
+  np.testing.assert_allclose(na.T, comp, atol=1e-4, rtol=1e-5)
   return na, comp
 
+def matmul_N():
+  N = 512
+  ele_size = np.float32().itemsize * 8
+  ele_count = 512 // ele_size
 
-na, comp = matmul_N_LLVM()
+  # na = np.zeros(256, dtype=np.float32)
+  na = np.zeros((N, N), dtype=np.float32)
+  nb = np.random.randn(N, N).astype(np.float32)
+  nc = np.random.randn(N, N).astype(np.float32)
+
+  comp = (nb.T @ nc)
+  # nb = nb.T.copy()
+
+  a = MallocAllocator.alloc(na.size * np.dtype(np.float32).itemsize)
+  b = MallocAllocator.alloc(nb.size * np.dtype(np.float32).itemsize)
+  c = MallocAllocator.alloc(nc.size * np.dtype(np.float32).itemsize)
+  MallocAllocator.copyin(b, flat_mv(nb.data))
+  MallocAllocator.copyin(c, flat_mv(nc.data))
+
+  module = ir.Module(name=__file__)
+  func = ir.Function(module, ir.FunctionType(ir.IntType(64), [ir.FloatType().as_pointer()]*3), "amx")
+  entry = ir.IRBuilder(func.append_basic_block(name="entry"))
+  exit = ir.IRBuilder(func.append_basic_block(name="exit"))
+  zm, xm, ym = [entry.ptrtoint(func.args[i], ir.IntType(64)) for i in range(3)]
+
+  for y in range(0, N, ele_count*2):
+    for x in range(0, N, ele_count*2):
+      AMX.set(entry)
+      for k in range(N):
+        xptr = const(x + (k * N), dtypes.int64)
+        yptr = const(y + (k * N), dtypes.int64)
+        AMX.ldx(entry, entry.add(const(1<<62, dtypes.int64), entry.add(xm, entry.mul(xptr, const(4, dtypes.int64)))))
+        AMX.ldy(entry, entry.add(const(1<<62, dtypes.int64), entry.add(ym, entry.mul(yptr, const(4, dtypes.int64)))))
+
+        # <Z row> <X offset> <Y offset>
+        AMX.fma32(entry, const(0<<20 | (0*ele_count*ele_size)<<10 | (0*ele_count*ele_size), dtypes.int64))
+        AMX.fma32(entry, const(1<<20 | (1*ele_count*ele_size)<<10 | (0*ele_count*ele_size), dtypes.int64))
+        AMX.fma32(entry, const(2<<20 | (0*ele_count*ele_size)<<10 | (1*ele_count*ele_size), dtypes.int64))
+        AMX.fma32(entry, const(3<<20 | (1*ele_count*ele_size)<<10 | (1*ele_count*ele_size), dtypes.int64))
+
+      gptr = const(((y * N) + x) * 4, dtypes.int64)
+      zmp = entry.add(zm, gptr)
+      for j in range(2):
+        for r in range(ele_count):
+          z_row = j*2
+          ptr = ((j*ele_count)+r)*N * ele_size
+          AMX.stz(entry, entry.add(zmp, const(1<<62 | ((r*ele_size+z_row) << 56) | ptr, dtypes.int64)))
+      AMX.clr(entry)
+
+  entry.branch(exit._block)
+  exit.ret(const(0, dtypes.int64))
+  device = LLVMDevice("llvm")
+  ir_str = str(module)
+  # print(ir_str)
+  prog = LLVMProgram(device, "amx", LLVMCompiler(device).compile(ir_str))
+  prog(a, b, c, N**2)
+  print("done")
+  MallocAllocator.copyout(flat_mv(na.data), a)
+  np.testing.assert_allclose(na.T, comp, atol=1e-4, rtol=1e-5)
+
+
+
+matmul_N_LLVM()
+# matmul_N()
 # print(na.T)
 # print(comp)
-np.testing.assert_allclose(na.T, comp, atol=1e-4, rtol=1e-5)
+# np.testing.assert_allclose(na, comp, atol=1e-4, rtol=1e-5)
 # print(na)
 # print(comp)
