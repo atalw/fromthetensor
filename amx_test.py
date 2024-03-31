@@ -22,110 +22,158 @@ class AMX:
   mac16, fma16, fms16 = partialmethod(op_gpr, 14), partialmethod(op_gpr, 15), partialmethod(op_gpr, 16)
   vecint, vecfp, matint, matfp, genlut = partialmethod(op_gpr, 18), partialmethod(op_gpr, 19), partialmethod(op_gpr, 20), partialmethod(op_gpr, 21), partialmethod(op_gpr, 22)
 
-N = 16
-# na = np.zeros(256, dtype=np.float32)
-na = np.zeros((N, N), dtype=np.float32)
-nb = np.random.randn(N, N).astype(np.float32)
-nc = np.random.randn(N, N).astype(np.float32)
+
+def matmul_16():
+  N = 4
+  na = np.zeros((N, N), dtype=np.float32)
+  nb = np.array([
+    [1, 0, 1, 1],
+    [1, 0, 0, 1],
+    [1, 0, 1, 1],
+    [1, 0, 0, 1],
+  ]).astype(np.float32)
+  nc = np.array([
+    [0, 0, 0, 0],
+    [0, 1, 0, 0],
+    [1, 1, 1, 1],
+    [0, 0, 0, 0],
+  ]).astype(np.float32)
+  c = [
+    [1, 1, 1, 1],
+    [0, 0, 0, 0],
+    [1, 1, 1, 1],
+    [0, 0, 0, 0]
+  ]
+  comp = (nb @ nc)
+  nb = nb.T.copy()
+
+  a = MallocAllocator.alloc(na.size * np.dtype(np.float32).itemsize)
+  b = MallocAllocator.alloc(nb.size * np.dtype(np.float32).itemsize)
+  c = MallocAllocator.alloc(nc.size * np.dtype(np.float32).itemsize)
+  MallocAllocator.copyin(b, flat_mv(nb.data))
+  MallocAllocator.copyin(c, flat_mv(nc.data))
+
+  module = ir.Module(name=__file__)
+  func = ir.Function(module, ir.FunctionType(ir.IntType(64), [ir.FloatType().as_pointer()]*3), "amx")
+  entry = ir.IRBuilder(func.append_basic_block(name="entry"))
+  exit = ir.IRBuilder(func.append_basic_block(name="exit"))
+  zm, xm, ym = [entry.ptrtoint(func.args[i], ir.IntType(64)) for i in range(3)]
+
+  AMX.set(entry)
+
+  for i in range(N):
+    AMX.ldx(entry, entry.add(xm, const(i*N*4, dtypes.int64)))
+    AMX.ldy(entry, entry.add(ym, const(i*N*4, dtypes.int64)))
+
+    AMX.fma32(entry, const(0, dtypes.int64))
+
+  for i in range(N):
+    AMX.stz(entry, entry.add(zm, const((i*4) << 56 | (i*N*4), dtypes.int64)))
+
+  AMX.clr(entry)
+
+  entry.branch(exit._block)
+  exit.ret(const(0, dtypes.int64))
+  device = LLVMDevice("llvm")
+  ir_str = str(module)
+  # print(ir_str)
+  prog = LLVMProgram(device, "amx", LLVMCompiler(device).compile(ir_str))
+  prog(a, b, c, N**2)
+  MallocAllocator.copyout(flat_mv(na.data), a)
+  return na, comp
+
+def matmul_N_LLVM():
+  N = 32
+
+  # na = np.zeros(256, dtype=np.float32)
+  na = np.zeros((N, N), dtype=np.float32)
+  nb = np.random.randn(N, N).astype(np.float32)
+  nc = np.random.randn(N, N).astype(np.float32)
+
+  comp = (nb @ nc)
+  nb = nb.T.copy()
+
+  a = MallocAllocator.alloc(na.size * np.dtype(np.float32).itemsize)
+  b = MallocAllocator.alloc(nb.size * np.dtype(np.float32).itemsize)
+  c = MallocAllocator.alloc(nc.size * np.dtype(np.float32).itemsize)
+  MallocAllocator.copyin(b, flat_mv(nb.data))
+  MallocAllocator.copyin(c, flat_mv(nc.data))
+
+  module = ir.Module(name=__file__)
+  func = ir.Function(module, ir.FunctionType(ir.IntType(64), [ir.FloatType().as_pointer()]*3), "amx")
+  entry = ir.IRBuilder(func.append_basic_block(name="entry"))
+  exit = ir.IRBuilder(func.append_basic_block(name="exit"))
+  zm, xm, ym = [entry.ptrtoint(func.args[i], ir.IntType(64)) for i in range(3)]
+
+  loop_1 = ir.IRBuilder(func.append_basic_block(name="loop_y"))
+  loop_2 = ir.IRBuilder(func.append_basic_block(name="loop_x"))
+  loop_3 = ir.IRBuilder(func.append_basic_block(name="loop_k"))
+  loop_3_exit = ir.IRBuilder(func.append_basic_block(name="loop_k_exit"))
+  loop_2_exit = ir.IRBuilder(func.append_basic_block(name="loop_x_exit"))
+  loop_1_exit = ir.IRBuilder(func.append_basic_block(name="loop_y_exit"))
+
+  y = loop_1.phi(ir.IntType(64), name="y")
+  x = loop_2.phi(ir.IntType(64), name="x")
+  k = loop_3.phi(ir.IntType(64), name="k")
+
+  AMX.set(loop_2)
+
+  # stride
+  xptr = loop_3_exit.add(x, loop_3_exit.mul(k, const(N, dtypes.int64)))
+  yptr = loop_3_exit.add(y, loop_3_exit.mul(k, const(N, dtypes.int64)))
+
+  # double loads load 32 floats
+  AMX.ldx(loop_3_exit, loop_3_exit.add(const(1<<62, dtypes.int64), loop_3_exit.add(xm, loop_3_exit.mul(const(4, dtypes.int64), xptr))))
+  AMX.ldy(loop_3_exit, loop_3_exit.add(const(1<<62, dtypes.int64), loop_3_exit.add(ym, loop_3_exit.mul(const(4, dtypes.int64), yptr))))
+
+  # <Z row> <X offset> <Y offset>
+  AMX.fma32(loop_3_exit, const(0<<20 | (0*16*4)<<10 | (0*16*4), dtypes.int64))
+  AMX.fma32(loop_3_exit, const(1<<20 | (1*16*4)<<10 | (0*16*4), dtypes.int64))
+  AMX.fma32(loop_3_exit, const(2<<20 | (0*16*4)<<10 | (1*16*4), dtypes.int64))
+  AMX.fma32(loop_3_exit, const(3<<20 | (1*16*4)<<10 | (1*16*4), dtypes.int64))
+
+  # store
+  gptr = loop_2_exit.mul(loop_2_exit.add(loop_2.mul(y, const(N, dtypes.int64)), x), const(4, dtypes.int64))
+  zmp = loop_2_exit.add(zm, gptr)
+  for j in range(2):
+    for r in range(16):
+      z_row = j*2
+      ptr = ((j*16)+r)*N
+      AMX.stz(loop_2_exit, loop_2_exit.add(zmp, const(1 << 62 | ((r*4+z_row) << 56) | ptr*4, dtypes.int64)))
+  AMX.clr(loop_2_exit)
+
+  yp = loop_1_exit.add(y, const(32, dtypes.int64))
+  xp = loop_2_exit.add(x, const(32, dtypes.int64))
+  kp = loop_3_exit.add(k, const(1, dtypes.int64))
+
+  y.add_incoming(const(0, dtypes.int64), entry._block)
+  x.add_incoming(const(0, dtypes.int64), loop_1._block)
+  k.add_incoming(const(0, dtypes.int64), loop_2._block)
+  y.add_incoming(yp, loop_1_exit._block)
+  x.add_incoming(xp, loop_2_exit._block)
+  k.add_incoming(kp, loop_3_exit._block)
+
+  entry.branch(loop_1._block)
+  loop_1.branch(loop_2._block)
+  loop_2.branch(loop_3._block)
+  loop_3.branch(loop_3_exit._block)
+  loop_3_exit.cbranch(loop_3_exit.icmp_unsigned("==", kp, const(N, dtypes.int64)), loop_2_exit._block, loop_3._block)
+  loop_2_exit.cbranch(loop_2_exit.icmp_unsigned("==", xp, const(N, dtypes.int64)), loop_1_exit._block, loop_2._block)
+  loop_1_exit.cbranch(loop_1_exit.icmp_unsigned("==", yp, const(N, dtypes.int64)), exit._block, loop_1._block)
+  exit.ret(const(0, dtypes.int64))
+
+  device = LLVMDevice("llvm")
+  ir_str = str(module)
+  # print(ir_str)
+  prog = LLVMProgram(device, "amx", LLVMCompiler(device).compile(ir_str))
+  prog(a, b, c, N**2)
+  MallocAllocator.copyout(flat_mv(na.data), a)
+  return na, comp
 
 
-a = MallocAllocator.alloc(na.size * np.dtype(np.float32).itemsize)
-b = MallocAllocator.alloc(nb.size * np.dtype(np.float32).itemsize)
-c = MallocAllocator.alloc(nc.size * np.dtype(np.float32).itemsize)
-
-MallocAllocator.copyin(b, flat_mv(nb.data))
-MallocAllocator.copyin(c, flat_mv(nc.data))
-
-module = ir.Module(name=__file__)
-func = ir.Function(module, ir.FunctionType(ir.IntType(64), [ir.FloatType().as_pointer()]*3), "amx")
-
-entry = ir.IRBuilder(func.append_basic_block(name="entry"))
-exit = ir.IRBuilder(func.append_basic_block(name="exit"))
-zm, xm, ym = [entry.ptrtoint(func.args[i], ir.IntType(64)) for i in range(3)]
-
-AMX.set(entry)
-
-for i in range(N):
-  AMX.ldx(entry, entry.add(xm, const(i*16*4, dtypes.int64)))
-  AMX.ldy(entry, entry.add(ym, const(i*16*4, dtypes.int64)))
-
-  AMX.fma32(entry, const(0, dtypes.int64))
-
-for i in range(N):
-  AMX.stz(entry, entry.add(zm, const(i*4 << 56 | (i*16*4), dtypes.int64)))
-
-AMX.clr(entry)
-
-entry.branch(exit._block)
-exit.ret(const(0, dtypes.int64))
-
-"""
-loop_1 = ir.IRBuilder(func.append_basic_block(name="loop_y"))
-loop_2 = ir.IRBuilder(func.append_basic_block(name="loop_x"))
-loop_3 = ir.IRBuilder(func.append_basic_block(name="loop_k"))
-loop_3_exit = ir.IRBuilder(func.append_basic_block(name="loop_k_exit"))
-loop_2_exit = ir.IRBuilder(func.append_basic_block(name="loop_x_exit"))
-loop_1_exit = ir.IRBuilder(func.append_basic_block(name="loop_y_exit"))
-
-y = loop_1.phi(ir.IntType(64), name="y")
-x = loop_2.phi(ir.IntType(64), name="x")
-k = loop_3.phi(ir.IntType(64), name="k")
-
-exit = ir.IRBuilder(func.append_basic_block(name="exit"))
-
-AMX.set(loop_2)
-
-# stride
-xptr = loop_3_exit.add(x, loop_3_exit.mul(k, const(N, dtypes.int64)))
-yptr = loop_3_exit.add(y, loop_3_exit.mul(k, const(N, dtypes.int64)))
-
-AMX.ldx(loop_3_exit, loop_3_exit.add(const(1<<62, dtypes.int64), loop_3_exit.add(xm, loop_3_exit.mul(const(4, dtypes.int64), xptr))))
-AMX.ldy(loop_3_exit, loop_3_exit.add(const(1<<62, dtypes.int64), loop_3_exit.add(ym, loop_3_exit.mul(const(4, dtypes.int64), yptr))))
-
-AMX.fma32(loop_3_exit, const(0 << 20 | (0*16*4) << 10 | (0*16*4), dtypes.int64))
-AMX.fma32(loop_3_exit, const(1 << 20 | (1*16*4) << 10 | (0*16*4), dtypes.int64))
-AMX.fma32(loop_3_exit, const(2 << 20 | (0*16*4) << 10 | (1*16*4), dtypes.int64))
-AMX.fma32(loop_3_exit, const(3 << 20 | (1*16*4) << 10 | (1*16*4), dtypes.int64))
-
-gptr = loop_2_exit.mul(const(4, dtypes.int64), loop_2_exit.add(x, loop_2_exit.mul(y, const(N, dtypes.int64))))
-zmp = loop_2_exit.add(zm, gptr)
-for j in range(2):
-  for r in range(16):
-    z_row = j*2
-    ptr = ((j*16)+r)*N
-    AMX.stz(loop_2_exit, loop_2_exit.add(zmp, const(1<<62 | ((r*4+z_row)<<56) | ptr*4, dtypes.int64)))
-AMX.clr(loop_2_exit)
-
-yp = loop_1_exit.add(y, const(32, dtypes.int64))
-xp = loop_2_exit.add(x, const(32, dtypes.int64))
-kp = loop_3_exit.add(k, const(1, dtypes.int64))
-
-y.add_incoming(const(0, dtypes.int64), entry._block)
-x.add_incoming(const(0, dtypes.int64), loop_1._block)
-k.add_incoming(const(0, dtypes.int64), loop_2._block)
-y.add_incoming(yp, loop_1_exit._block)
-x.add_incoming(xp, loop_2_exit._block)
-k.add_incoming(kp, loop_3_exit._block)
-
-entry.branch(loop_1._block)
-loop_1.branch(loop_2._block)
-loop_2.branch(loop_3._block)
-loop_3.branch(loop_3_exit._block)
-loop_3_exit.cbranch(loop_3_exit.icmp_unsigned("==", kp, const(N, dtypes.int64)), loop_2_exit._block, loop_3._block)
-loop_2_exit.cbranch(loop_2_exit.icmp_unsigned("==", xp, const(N, dtypes.int64)), loop_1_exit._block, loop_2._block)
-loop_1_exit.cbranch(loop_1_exit.icmp_unsigned("==", yp, const(N, dtypes.int64)), exit._block, loop_1._block)
-exit.ret(const(0, dtypes.int64))
-"""
-
-device = LLVMDevice("llvm")
-ir_str = str(module)
-print(ir_str)
-prog = LLVMProgram(device, "amx", LLVMCompiler(device).compile(ir_str))
-prog(a, b, c, N**2)
-MallocAllocator.copyout(flat_mv(na.data), a)
-
-
-comp = (nb.T @ nc).T
-np.testing.assert_allclose(na, comp, atol=1e-4, rtol=1e-5)
+na, comp = matmul_N_LLVM()
+# print(na.T)
+# print(comp)
+np.testing.assert_allclose(na.T, comp, atol=1e-4, rtol=1e-5)
 # print(na)
 # print(comp)
