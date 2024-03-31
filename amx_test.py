@@ -177,10 +177,17 @@ def matmul_N_LLVM():
   np.testing.assert_allclose(na.T, comp, atol=1e-4, rtol=1e-5)
   return na, comp
 
+# x, y -> 512 bytes each
+# each operation works on 64 bytes
+# some ops have multiple register options (2 registers for us) enabled by a bit
+# each register is 64 bytes
+# z -> 64 registers in grid = 8x8 grid
+# since we are doing fp32, 2x2 subgrid can compute 32-bit mulacc
+# which probably means we a 16x16 grid
 def matmul_N():
   N = 512
-  ele_size = np.float32().itemsize * 8
-  ele_count = 512 // ele_size
+  ele_size = np.float32().itemsize # 4
+  ele_count = 512 // 8 // ele_size # 16
 
   # na = np.zeros(256, dtype=np.float32)
   na = np.zeros((N, N), dtype=np.float32)
@@ -208,22 +215,44 @@ def matmul_N():
       for k in range(N):
         xptr = const(x + (k * N), dtypes.int64)
         yptr = const(y + (k * N), dtypes.int64)
+
+        # multiple register load by setting 62nd bit to 1
+        # which means 2 registers are loaded at once
+        # one register is 64 bytes, so 32 floats are loaded in adjacent registers here
+        # so tile size is 32x32 of the larger matrix
         AMX.ldx(entry, entry.add(const(1<<62, dtypes.int64), entry.add(xm, entry.mul(xptr, const(4, dtypes.int64)))))
+        # this is not transposed, we maybe should transpose it. test performance
         AMX.ldy(entry, entry.add(const(1<<62, dtypes.int64), entry.add(ym, entry.mul(yptr, const(4, dtypes.int64)))))
 
-        # <Z row> <X offset> <Y offset>
-        AMX.fma32(entry, const(0<<20 | (0*ele_count*ele_size)<<10 | (0*ele_count*ele_size), dtypes.int64))
-        AMX.fma32(entry, const(1<<20 | (1*ele_count*ele_size)<<10 | (0*ele_count*ele_size), dtypes.int64))
-        AMX.fma32(entry, const(2<<20 | (0*ele_count*ele_size)<<10 | (1*ele_count*ele_size), dtypes.int64))
-        AMX.fma32(entry, const(3<<20 | (1*ele_count*ele_size)<<10 | (1*ele_count*ele_size), dtypes.int64))
+        # fma32 does 16x16 float mulaccs to result in 256 values
+        # these are stored in z rows in batches of 16 registers (256*32/8/ 64 bytes per register)
+        # result of first multiply added to every 4th row -> 0, 4, 8 ...
+        # result of second fma32 stored in row 1, 5, 9 ...
+        # result of third fma32 stored in row 2, 6, ...
+        # result of fourth fma32 stored in row 3, 7, ...
+        # --------------------<Z row> <X offset> <Y offset>
+        AMX.fma32(entry, const(0<<20 | (0*16*4)<<10 | (0*16*4), dtypes.int64))
+        AMX.fma32(entry, const(1<<20 | (1*16*4)<<10 | (0*16*4), dtypes.int64))
+        AMX.fma32(entry, const(2<<20 | (0*16*4)<<10 | (1*16*4), dtypes.int64))
+        AMX.fma32(entry, const(3<<20 | (1*16*4)<<10 | (1*16*4), dtypes.int64))
 
+      # get current row and move forward by x col
       gptr = const(((y * N) + x) * 4, dtypes.int64)
       zmp = entry.add(zm, gptr)
+      # 2 values for j since 2 consecutive registers are stored at once
       for j in range(2):
-        for r in range(ele_count):
+        for r in range(16):
+          # we are storing pairs of registers by doing (1 << 62), so we multiply by 2 here to skip
           z_row = j*2
-          ptr = ((j*ele_count)+r)*N * ele_size
-          AMX.stz(entry, entry.add(zmp, const(1<<62 | ((r*ele_size+z_row) << 56) | ptr, dtypes.int64)))
+          # we are working in a 32x32 tile of a larger NxN matrix
+          # when j = 0 (ie 1st register), we want to move foward by N indices to reach the start of the next row
+          # when j = 1 (ie 2nd register), we want to move forward by (16 + r)N [1st 16 rows were filled in by register 1 fmas]
+          # [and that's why final result is transposed]
+          ptr = ((j*16)+r)*N * ele_size
+          # when j = 0, row = 0, 4, 8, ... 60
+          # when j = 1, row = 2, 6, 10 ... 62
+          # store 128 bytes (2 reg at once)
+          AMX.stz(entry, entry.add(zmp, const(1<<62 | ((r*4+z_row) << 56) | ptr, dtypes.int64)))
       AMX.clr(entry)
 
   entry.branch(exit._block)
