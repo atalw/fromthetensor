@@ -379,7 +379,7 @@ if __name__ == "__main__":
   for i in range(10):
     M, N, K = 2048, 32, 999
     # t1 = matmul_LLVM(N, M, K)
-    t2 = matmul_LLVM_transpose(N, M, K)
+    t2 = matmul_LLVM_transpose(M, N, K)
     # fast_slow = f"transpose slower by {colored(f"{(t2-t1)*1e6:9.2f}", 'red')} us" if t2 > t1 else f"non-tanspose faster by {colored(f"{(t1-t2)*1e6:9.2f}", 'green')} us"
     # print(f"without transpose before gemm = {t1*1e6:9.2f} us, with transpose before gemm = {t2*1e6:9.2f} us, {fast_slow}")
   # matmul_N()
