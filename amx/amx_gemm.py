@@ -3,11 +3,13 @@ import numpy as np
 from llvmlite import ir
 from tinygrad import Tensor, Device
 from tinygrad.device import MallocAllocator
-from tinygrad.helpers import flat_mv, colored
+from tinygrad.helpers import flat_mv, colored, getenv 
 from functools import partialmethod
 from tinygrad.dtype import dtypes
 from tinygrad.renderer.llvmir import const
 import time
+
+DEBUG = getenv("DEBUG")
 
 np.set_printoptions(linewidth=160, suppress=False)
 np.set_printoptions(linewidth=1000, threshold=10000000000, suppress=False)
@@ -282,7 +284,6 @@ def matmul_LLVM_transpose(M, N, K):
   nb = np.random.randn(M, K).astype(np.float32)
   nc = np.random.randn(K, N).astype(np.float32)
 
-  # comp = (nb @ nc)
   nb = nb.T.copy()
 
   a = MallocAllocator.alloc(na.size * np.dtype(np.float32).itemsize)
@@ -292,8 +293,7 @@ def matmul_LLVM_transpose(M, N, K):
   MallocAllocator.copyin(c, flat_mv(nc.data))
 
   module = ir.Module(name=__file__)
-  args = [ir.FloatType().as_pointer()]*3
-  args.extend([ir.IntType(64)]*3)
+  args = [ir.FloatType().as_pointer()]*3 + [ir.IntType(64)]*3
   func = ir.Function(module, ir.FunctionType(ir.IntType(64), args), "amx")
   entry = ir.IRBuilder(func.append_basic_block(name="entry"))
   exit = ir.IRBuilder(func.append_basic_block(name="exit"))
@@ -333,11 +333,10 @@ def matmul_LLVM_transpose(M, N, K):
   # gptr = ((row*N) + col) * size
   gptr = loop_2_exit.mul(loop_2_exit.add(loop_2.mul(row, Nm), col), const(size, dtypes.int64))
   zmp = loop_2_exit.add(zm, gptr)
-  for j in range(2):
-    for r in range(count):
-      z_row = j*2
-      ptr = ((j*count)+r)*N*size
-      AMX.stz(loop_2_exit, loop_2_exit.add(zmp, const(1 << 62 | ((r*size+z_row) << 56) | ptr, dtypes.int64)))
+  for i in range(16):
+    AMX.stz(loop_2_exit, loop_2_exit.add(zmp, const(1 << 62 | ((i*4+0) << 56) | i*N*4, dtypes.int64)))
+    AMX.stz(loop_2_exit, loop_2_exit.add(zmp, const(1 << 62 | ((i*4+2) << 56) | (16+i)*N*4, dtypes.int64)))
+
   AMX.clr(loop_2_exit)
 
   # count*2 since we're doing double loads 
@@ -363,12 +362,18 @@ def matmul_LLVM_transpose(M, N, K):
 
   device = LLVMDevice("llvm")
   ir_str = str(module)
-  # print(ir_str)
   prog = LLVMProgram(device, "amx", LLVMCompiler(device).compile(ir_str))
-  MallocAllocator.copyout(flat_mv(na.data), a)
-  # np.testing.assert_allclose(na, comp, atol=1e-4, rtol=1e-5)
-  print("AMX")
-  [timeit(lambda: prog(a, b, c, M, N, K)) for _ in range(10)]
+
+  if DEBUG >= 2:
+    print(ir_str)
+    prog(a, b, c, M, N, K)
+    MallocAllocator.copyout(flat_mv(na.data), a)
+    comp = (nb @ nc)
+    np.testing.assert_allclose(na, comp, atol=1e-4, rtol=1e-5)
+  else:
+    MallocAllocator.copyout(flat_mv(na.data), a)
+    print("AMX")
+    [timeit(lambda: prog(a, b, c, M, N, K)) for _ in range(10)]
 
 def cpu_matmul(N, M, K):
   nb = np.random.randn(M, K).astype(np.float32)
@@ -384,7 +389,7 @@ def metal_matmul(N, M, K):
   fn = lambda: (nb@nc).numpy()
   [timeit(fn) for _ in range(10)]
 
-M, N, K = 2048, 2048, 2048
+M, N, K = 4096, 4096, 4096
 
 def timeit(fxn):
   st = time.perf_counter()
