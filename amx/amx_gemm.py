@@ -307,7 +307,6 @@ def matmul_LLVM_transpose(M, N, K):
   # kN * 4
   xptr = loop_3_exit.mul(const(size, dtypes.int64), loop_3_exit.add(col, loop_3_exit.mul(k, Nm)))
   yptr = loop_3_exit.mul(const(size, dtypes.int64), loop_3_exit.add(row, loop_3_exit.mul(k, Mm)))
-  # data_offset = loop_3_exit.mul(k, load_store_width)
   # idx = k % 4
   # q = k / 4; idx = k - 4 * q
   q = loop_3_exit.udiv(k, const(4, dtypes.int64))
@@ -342,7 +341,7 @@ def matmul_LLVM_transpose(M, N, K):
 
   # store
   # gptr = ((row*N) + col) * size
-  gptr = loop_2_exit.mul(loop_2_exit.add(loop_2.mul(row, Mm), col), const(size, dtypes.int64))
+  gptr = loop_2_exit.mul(loop_2_exit.add(loop_2.mul(row, Nm), col), const(size, dtypes.int64))
   zmp = loop_2_exit.add(zm, gptr)
   for i in range(16):
     AMX.stz(loop_2_exit, loop_2_exit.add(zmp, const(1 << 62 | ((i*4+0) << 56) | i*N*4, dtypes.int64)))
@@ -394,9 +393,9 @@ def matmul_LLVM_transpose(M, N, K):
     # print(ir_str)
     prog(a, b, c, M, N, K)
     MallocAllocator.copyout(flat_mv(na.data), a)
+    print("done")
     comp = (nb @ nc)
     np.testing.assert_allclose(na, comp, atol=1e-4, rtol=1e-5)
-    print("done")
   else:
     MallocAllocator.copyout(flat_mv(na.data), a)
     print("AMX")
@@ -417,8 +416,9 @@ def metal_matmul(N, M, K):
   [timeit(fn) for _ in range(10)]
 
 M, N, K = 4096, 4096, 4096
-# M, N, K = 512, 512, 512
-# M, N, K = 32, 32, 32
+# M, N, K = 1024, 1024, 4096
+# M, N, K = 2048, 256, 1024 
+# M, N, K = 64, 64, 64
 
 def timeit(fxn):
   st = time.perf_counter()
