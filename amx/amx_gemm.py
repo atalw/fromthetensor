@@ -397,14 +397,13 @@ def matmul_LLVM_transpose(M, N, K):
     comp = (nb @ nc)
     np.testing.assert_allclose(na, comp, atol=1e-4, rtol=1e-5)
   else:
-    MallocAllocator.copyout(flat_mv(na.data), a)
     print("AMX")
     [timeit(lambda: prog(a, b, c, M, N, K)) for _ in range(10)]
 
 def cpu_matmul(N, M, K):
   nb = np.random.randn(M, K).astype(np.float32)
   nc = np.random.randn(K, N).astype(np.float32)
-  print("CPU")
+  print("CPU (using all threads)")
   [timeit(lambda: nb@nc) for _ in range(10)]
 
 def metal_matmul(N, M, K):
@@ -415,7 +414,11 @@ def metal_matmul(N, M, K):
   fn = lambda: (nb@nc).numpy()
   [timeit(fn) for _ in range(10)]
 
-M, N, K = 4096, 4096, 4096
+M, N, K = 4096*2, 4096*2, 4096*2
+# M, N, K = 4096, 4096, 4096
+M, N, K = 2048, 2048, 2048
+# M, N, K = 1024, 1024, 1024
+# M, N, K = 512, 512, 512
 # M, N, K = 1024, 1024, 4096
 # M, N, K = 2048, 256, 1024 
 # M, N, K = 64, 64, 64
