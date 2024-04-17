@@ -93,7 +93,7 @@ if __name__ == "__main__":
     cl = time.monotonic()
     loss, acc = train_step(X1_train, X2_train, Y_train)
     t.set_description(f"lr: {opt.lr.item():9.7f} loss: {loss.numpy():4.2f} acc: {acc.numpy():5.2f}% {GlobalCounters.global_ops*1e-9/(cl-st):9.2f} GFLOPS")
-    opt.lr.assign(opt.lr * siamese.hyp['opt']['lr_decay'])
+    opt.lr = opt.lr * siamese.hyp['opt']['lr_decay']
     st = cl
     del X1_train, X2_train, Y_train
     safe_save(get_state_dict(model), f"./ckpts/deepchess_2m_500k_epoch_{i}.safe")
