@@ -12,7 +12,7 @@ import models.siamese as siamese
 from tqdm import trange
 from tinygrad.helpers import getenv
 
-# @TinyJit
+@TinyJit
 def train_step(X1_train, X2_train, Y_train) -> Tuple[Tensor, Tensor]:
   with Tensor.train():
     sample = Tensor.randint(BS, high=X1_train.shape[0])
@@ -63,16 +63,17 @@ if __name__ == "__main__":
   epochs = siamese.hyp['epochs']
 
   pos2vec = pos2vec_model.Pos2Vec()
-  load_state_dict(pos2vec, safe_load("./ckpts/pos2vec_500k.safe"))
+  load_state_dict(pos2vec, safe_load("./ckpts/pos2vec_1m.safe"))
 
   wins, loses = None, None
-  data_chunk_size = data.get_data_count()
+  data_chunk_size = 200_000
   num_chunks = data.get_data_count()//data_chunk_size
   chunk = start_epoch//(epochs//num_chunks)
 
   learning_rate = siamese.hyp['opt']['lr']
 
   model = siamese.Siamese()
+
   if start_epoch > 0:
     load_state_dict(model, safe_load(f"./ckpts/deepchess_2m_500k_epoch_{start_epoch-1}.safe"))
     wins, loses = data.load_wins_loses(chunk, data_chunk_size)
@@ -90,14 +91,14 @@ if __name__ == "__main__":
     if i == epochs//num_chunks*chunk:
       wins, loses = data.load_wins_loses(chunk, data_chunk_size)
       chunk += 1
-    X1_train, X2_train, Y_train, X1_test, X2_test, Y_test = data.generate_new_pairs(wins, loses)
+      X1_train, X2_train, Y_train, X1_test, X2_test, Y_test = data.generate_new_pairs(wins, loses)
     GlobalCounters.reset()
     cl = time.monotonic()
     loss, acc = train_step(X1_train, X2_train, Y_train)
     t.set_description(f"lr: {opt.lr.item():9.7f} loss: {loss.numpy():4.2f} acc: {acc.numpy():5.2f}% {GlobalCounters.global_ops*1e-9/(cl-st):9.2f} GFLOPS")
     opt.lr = opt.lr * siamese.hyp['opt']['lr_decay']
     st = cl
-    del X1_train, X2_train, Y_train
+    # del X1_train, X2_train, Y_train
     safe_save(get_state_dict(model), f"./ckpts/deepchess_2m_500k_epoch_{i}.safe")
   
   evaluate(model, X1_test.numpy(), X2_test.numpy(), Y_test.numpy())
