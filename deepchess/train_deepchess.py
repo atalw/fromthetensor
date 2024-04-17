@@ -1,5 +1,4 @@
 import time
-import random
 from typing import Tuple
 import numpy as np
 from tinygrad import Tensor, dtypes, GlobalCounters, TinyJit, Device
@@ -35,7 +34,6 @@ def train_step(X1_train, X2_train, Y_train) -> Tuple[Tensor, Tensor]:
     acc = (out.argmax(axis=-1) == labels.argmax(axis=-1)).mean()
     return loss.realize(), acc.realize()
 
-# @TinyJit
 def evaluate(model, X1_test, X2_test, Y_test, BS=128):
   Tensor.training = False
   def numpy_eval(Y_test):
@@ -63,46 +61,37 @@ if __name__ == "__main__":
   epochs = siamese.hyp['epochs']
 
   pos2vec = pos2vec_model.Pos2Vec()
-  load_state_dict(pos2vec, safe_load("./ckpts/pos2vec_1m.safe"))
-
-  wins, loses = None, None
-  data_chunk_size = 200_000
-  num_chunks = data.get_data_count()//data_chunk_size
-  chunk = start_epoch//(epochs//num_chunks)
+  load_state_dict(pos2vec, safe_load("./ckpts/pos2vec_2m.safe"))
 
   learning_rate = siamese.hyp['opt']['lr']
-
   model = siamese.Siamese()
 
+  wins, loses = data.load_wins_loses()
+
   if start_epoch > 0:
-    load_state_dict(model, safe_load(f"./ckpts/deepchess_2m_500k_epoch_{start_epoch-1}.safe"))
-    wins, loses = data.load_wins_loses(chunk, data_chunk_size)
-    X1_train, X2_train, Y_train, X1_test, X2_test, Y_test = data.generate_new_pairs(wins, loses)
-    chunk += 1
+    load_state_dict(model, safe_load(f"./ckpts/deepchess_2m_200k_epoch_{start_epoch-1}.safe"))
     learning_rate *= siamese.hyp['opt']['lr_decay']**start_epoch
 
   # we aren't generating new (win,loss) pairs each generation so
   # add weight decay for l2 regularization
-  opt = optim.AdamW(get_parameters(model), lr=learning_rate)
+  opt = optim.Adam(get_parameters(model), lr=learning_rate)
 
   st = time.monotonic()
 
   for i in (t := trange(start_epoch, epochs)):
-    if i == epochs//num_chunks*chunk:
-      wins, loses = data.load_wins_loses(chunk, data_chunk_size)
-      chunk += 1
-      X1_train, X2_train, Y_train, X1_test, X2_test, Y_test = data.generate_new_pairs(wins, loses)
+    X1_train, X2_train, Y_train, X1_test, X2_test, Y_test = data.generate_new_pairs(wins, loses)
+    # print("shapes", X1_train.shape, X2_train.shape, Y_train.shape)
     GlobalCounters.reset()
     cl = time.monotonic()
     loss, acc = train_step(X1_train, X2_train, Y_train)
     t.set_description(f"lr: {opt.lr.item():9.7f} loss: {loss.numpy():4.2f} acc: {acc.numpy():5.2f}% {GlobalCounters.global_ops*1e-9/(cl-st):9.2f} GFLOPS")
     opt.lr = opt.lr * siamese.hyp['opt']['lr_decay']
     st = cl
-    # del X1_train, X2_train, Y_train
-    safe_save(get_state_dict(model), f"./ckpts/deepchess_2m_500k_epoch_{i}.safe")
+    del X1_train, X2_train, Y_train
+    safe_save(get_state_dict(model), f"./ckpts/deepchess_2m_200k_epoch_{i}.safe")
   
   evaluate(model, X1_test.numpy(), X2_test.numpy(), Y_test.numpy())
 
-  fn = f"./ckpts/deepchess_2m_500k.safe"
+  fn = f"./ckpts/deepchess_2m_200k.safe"
   safe_save(get_state_dict(model), fn)
   print(f" *** Model saved to {fn} ***")

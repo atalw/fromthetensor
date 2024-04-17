@@ -2,55 +2,41 @@ import random
 import numpy as np
 from tinygrad import Tensor, dtypes, Device
 import chess.pgn
-import itertools as it
 import math
 import random
 
-filename_fen = "data/dataset_2m"
-pair_count = 500_000
+filename_fen = "data/dataset"
+pair_count = 200_000
+# pair_count = 500
+
+def load_wins_loses():
+  wins_on_disk = np.load(f"{filename_fen}_wins.npy", mmap_mode='c')
+  loses_on_disk = np.load(f"{filename_fen}_loses.npy", mmap_mode='c')
+  return wins_on_disk, loses_on_disk
 
 def get_data_count():
-  return np.load(f"{filename_fen}_Y.npy", mmap_mode='c').shape[0]
-
-def load_wins_loses(chunk_idx, chunk_size):
-  print(f"loading chunk {chunk_idx} ({chunk_size*(chunk_idx+1)})")
-  X_on_disk = np.load(f"{filename_fen}_X.npy", mmap_mode='c')
-  Y_on_disk = np.load(f"{filename_fen}_Y.npy", mmap_mode='c')
-  X = X_on_disk[chunk_idx*chunk_size:(chunk_idx+1)*chunk_size]
-  Y = Y_on_disk[chunk_idx*chunk_size:(chunk_idx+1)*chunk_size]
-  wins, loses = X[Y == 1], X[Y == 0]
-  return wins, loses
+  wins, loses = load_wins_loses()
+  return wins.shape[0] + loses.shape[0]
 
 def generate_new_pairs(wins, loses):
   x1, x2, y = _generate_new_pairs(wins, loses)
+  assert x1.shape[0] == x2.shape[0] == y.shape[0] == pair_count
   ratio = 0.8
-  X1_train, X1_test = x1[:int(len(x1)*ratio)], x1[int(len(x1)*ratio):]
-  X2_train, X2_test = x2[:int(len(x2)*ratio)], x2[int(len(x2)*ratio):]
-  Y_train, Y_test = y[:int(len(y)*ratio)], y[int(len(y)*ratio):]
-  X1_train = Tensor(X1_train, dtype=dtypes.float32, device=Device.DEFAULT)
-  X2_train = Tensor(X2_train, dtype=dtypes.float32, device=Device.DEFAULT)
-  X1_test = Tensor(X1_test, dtype=dtypes.float32, device=Device.DEFAULT)
-  X2_test = Tensor(X2_test, dtype=dtypes.float32, device=Device.DEFAULT)
-  Y_train = Tensor(Y_train, dtype=dtypes.float32, device=Device.DEFAULT)
-  Y_test = Tensor(Y_test, dtype=dtypes.float32, device=Device.DEFAULT)
-  return X1_train, X2_train, Y_train, X1_test, X2_test, Y_test
+  s1, s2 = math.ceil(x1.shape[0]*ratio), math.ceil(x1.shape[0]*(1-ratio))
+  x1_train, x1_test = x1.split([s1, s2])
+  x2_train, x2_test = x2.split([s1, s2])
+  y_train, y_test = y.split([s1, s2])
+  return x1_train, x2_train, y_train, x1_test, x2_test, y_test
 
-def _generate_new_pairs(wins, loses):
-  # n, k = min(len(wins), len(loses)), 2 
-  # assert math.comb(n, k) > pair_count, f"{len(wins)=} {len(loses)=}"
-  x1, x2, y = [], [], []
-  for i in range(pair_count):
-    win = wins[np.random.choice(wins.shape[0])]
-    loss = loses[np.random.choice(loses.shape[0])]
-    if random.random() < 0.5:
-      # NOTE: list append is faster than np append apparently
-      x1.append(win)
-      x2.append(loss)
-      y.append([1, 0])
-    else:
-      x1.append(loss)
-      x2.append(win)
-      y.append([0, 1])
+def _generate_new_pairs(wins, loses): 
+  # tensor puzzles ftw
+  # TODO: copy to gpu is the bottlneck
+  win_samples = Tensor(wins[np.random.choice(wins.shape[0], pair_count)])
+  loss_samples = Tensor(loses[np.random.choice(loses.shape[0], pair_count)])
+  conditions =  Tensor.rand((pair_count, 1)) <= 0.5
+  x1 = Tensor.where(conditions, win_samples, loss_samples)
+  x2 = Tensor.where(conditions, loss_samples, win_samples)
+  y = Tensor.where(conditions, Tensor([[1.0, 0.0]]), Tensor([[0.0, 1.0]]))
   return x1, x2, y
 
 # convert fen to bitboard
@@ -75,38 +61,6 @@ def serialize(board: chess.Board):
 
   return bitboard
 
-def generate_fen_dataset(num_samples):
-  game_count = 1
-  X, Y = [], []
-
-  with open(filename_pgn) as f:
-    while 1:
-      try:
-        game = chess.pgn.read_game(f)
-      except Exception:
-        break
-
-      if game is None: break
-      game_count += 1
-      result = game.headers["Result"]
-
-      if result == "1/2-1/2": continue
-
-      xs = get_random_positions(game, count=10)
-      assert len(xs) == 10
-      X.extend(xs)
-      Y.extend([1 if result == "1-0" else 0] * 10)
-
-      if game_count % 100 == 0:
-        print(f"parsing game {game_count}, got {len(Y)} samples")
-
-      if len(Y) >= num_samples: break
-    
-  X, Y = np.array(X), np.array(Y)
-  np.save(f"{filename_fen}_X", X)
-  np.save(f"{filename_fen}_Y", Y)
-  print(f"games saved to {filename_fen}")
-
 def get_random_positions(game, count):
   board = game.board()
   ignore_moves = 5
@@ -114,7 +68,7 @@ def get_random_positions(game, count):
 
   for i, move in enumerate(game.mainline_moves()):
     # cannot be from first 5 moves
-    if i < 5:
+    if i < ignore_moves:
       board.push(move)
       continue
 
@@ -126,6 +80,34 @@ def get_random_positions(game, count):
       board.push(move)
   
   return [serialize(b) for b in random.sample(positions, count)]
+
+def generate_fen_dataset(num_samples):
+  game_count = 1
+  wins, loses, both = [], [], [] # from white's perspective
+
+  with open(filename_pgn) as f:
+    while 1:
+      try: game = chess.pgn.read_game(f)
+      except Exception: break
+      if game is None: continue 
+
+      result = game.headers["Result"]
+      if result == "1/2-1/2": continue
+      xs = get_random_positions(game, count=10)
+      if result == "1-0": wins.extend(xs)
+      else: loses.extend(xs)
+      both.extend(xs)
+
+      game_count += 1
+      if game_count % 1000 == 0:
+        print(f"parsing game {game_count}, got {len(both)} samples")
+      if len(both) >= num_samples: break
+    
+  nwins, nloses, nboth = np.array(wins), np.array(loses), np.array(both)
+  np.save(f"{filename_fen}_wins", nwins)
+  np.save(f"{filename_fen}_loses", nloses)
+  np.save(f"{filename_fen}_combined", nboth)
+  print(f"games saved to {filename_fen}")
 
 if __name__ == "__main__":
   filename_pgn = "data/CCRL-4040.[1828834].pgn"
