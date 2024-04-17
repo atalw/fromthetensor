@@ -33,7 +33,7 @@ def generate_new_pairs(wins, loses):
   X2_test = Tensor(X2_test, dtype=dtypes.float32, device=Device.DEFAULT)
   Y_train = Tensor(Y_train, dtype=dtypes.float32, device=Device.DEFAULT)
   Y_test = Tensor(Y_test, dtype=dtypes.float32, device=Device.DEFAULT)
-  return X2_train, X2_train, Y_train, X1_test, X2_test, Y_test
+  return X1_train, X2_train, Y_train, X1_test, X2_test, Y_test
 
 def _generate_new_pairs(wins, loses):
   # n, k = min(len(wins), len(loses)), 2 
