@@ -10,7 +10,7 @@ filename_fen = "data/dataset_2m"
 pair_count = 500_000
 
 def get_data_count():
-  return np.load(f"{filename_fen}_X.npy", mmap_mode='c').shape[0]
+  return np.load(f"{filename_fen}_Y.npy", mmap_mode='c').shape[0]
 
 def load_wins_loses(chunk_idx, chunk_size):
   print(f"loading chunk {chunk_idx} ({chunk_size*(chunk_idx+1)})")
@@ -39,19 +39,18 @@ def _generate_new_pairs(wins, loses):
   # n, k = min(len(wins), len(loses)), 2 
   # assert math.comb(n, k) > pair_count, f"{len(wins)=} {len(loses)=}"
   x1, x2, y = [], [], []
-  batch_size = 1000
-  for i in range(pair_count//batch_size):
-    wins_batch = wins[np.random.choice(wins.shape[0], size=batch_size)]
-    loses_batch = loses[np.random.choice(loses.shape[0], size=batch_size)]
+  for i in range(pair_count):
+    win = wins[np.random.choice(wins.shape[0])]
+    loss = loses[np.random.choice(loses.shape[0])]
     if random.random() < 0.5:
-      # list append is faster than np append apparently
-      x1.extend(wins_batch)
-      x2.extend(loses_batch)
-      y.extend([[1, 0]] * batch_size)
+      # NOTE: list append is faster than np append apparently
+      x1.append(win)
+      x2.append(loss)
+      y.append([1, 0])
     else:
-      x1.extend(loses_batch)
-      x2.extend(wins_batch)
-      y.extend([[0, 1]] * batch_size)
+      x1.append(loss)
+      x2.append(win)
+      y.append([0, 1])
   return x1, x2, y
 
 # convert fen to bitboard
