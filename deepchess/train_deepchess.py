@@ -80,7 +80,9 @@ if __name__ == "__main__":
     chunk += 1
     learning_rate *= siamese.hyp['opt']['lr_decay']**start_epoch
 
-  opt = optim.Adam(get_parameters(model), lr=learning_rate)
+  # we aren't generating new (win,loss) pairs each generation so
+  # add weight decay for l2 regularization
+  opt = optim.AdamW(get_parameters(model), lr=learning_rate)
 
   st = time.monotonic()
 
