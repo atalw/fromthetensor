@@ -14,10 +14,9 @@ from tinygrad.helpers import getenv
 @TinyJit
 def train_step(X1_train, X2_train, Y_train) -> Tuple[Tensor, Tensor]:
   with Tensor.train():
-    sample = Tensor.randint(BS, high=X1_train.shape[0])
-    batch_one = X1_train[sample]
-    batch_two = X2_train[sample]
-    labels = Y_train[sample]
+    batch_one = X1_train
+    batch_two = X2_train
+    labels = Y_train
 
     # according to the paper, pos2vec is part of siamese and weights for pos2vec are updated alongside siamese 
     out_one = pos2vec.encode(batch_one)
@@ -56,7 +55,6 @@ def evaluate(model, X1_test, X2_test, Y_test, BS=128):
   return acc
 
 if __name__ == "__main__":
-  BS = 128
   start_epoch = getenv("EPOCH", 0)
   epochs = siamese.hyp['epochs']
 
@@ -69,7 +67,7 @@ if __name__ == "__main__":
   wins, loses = data.load_wins_loses()
 
   if start_epoch > 0:
-    load_state_dict(model, safe_load(f"./ckpts/deepchess_2m_200k_epoch_{start_epoch-1}.safe"))
+    load_state_dict(model, safe_load(f"./ckpts/deepchess_2m_600k_epoch_{start_epoch-1}.safe"))
     learning_rate *= siamese.hyp['opt']['lr_decay']**start_epoch
 
   # we aren't generating new (win,loss) pairs each generation so
@@ -79,8 +77,7 @@ if __name__ == "__main__":
   st = time.monotonic()
 
   for i in (t := trange(start_epoch, epochs)):
-    X1_train, X2_train, Y_train, X1_test, X2_test, Y_test = data.generate_new_pairs(wins, loses)
-    # print("shapes", X1_train.shape, X2_train.shape, Y_train.shape)
+    X1_train, X2_train, Y_train, X1_test, X2_test, Y_test = data.generate_new_pairs(wins, loses, i >= epochs-1)
     GlobalCounters.reset()
     cl = time.monotonic()
     loss, acc = train_step(X1_train, X2_train, Y_train)
@@ -88,10 +85,10 @@ if __name__ == "__main__":
     opt.lr = opt.lr * siamese.hyp['opt']['lr_decay']
     st = cl
     del X1_train, X2_train, Y_train
-    safe_save(get_state_dict(model), f"./ckpts/deepchess_2m_200k_epoch_{i}.safe")
+    safe_save(get_state_dict(model), f"./ckpts/deepchess_2m_600k_epoch_{i}.safe")
   
   evaluate(model, X1_test.numpy(), X2_test.numpy(), Y_test.numpy())
 
-  fn = f"./ckpts/deepchess_2m_200k.safe"
+  fn = f"./ckpts/deepchess_2m_600k.safe"
   safe_save(get_state_dict(model), fn)
   print(f" *** Model saved to {fn} ***")

@@ -8,16 +8,15 @@ hyp = {
   }
 }
 
-
 class Siamese:
   def __init__(self):
     self.layers = [
       nn.Linear(200, 400),
-      lambda x: x.leakyrelu(),
+      lambda x: x.relu(),
       nn.Linear(400, 200),
-      lambda x: x.leakyrelu(),
+      lambda x: x.relu(),
       nn.Linear(200, 100),
-      lambda x: x.leakyrelu(),
+      lambda x: x.relu(),
       nn.Linear(100, 2),
     ]
 
