@@ -6,7 +6,7 @@ import math
 import random
 
 filename_fen = "data/dataset"
-pair_count = 200_000
+pair_count = 600_000
 # pair_count = 500
 
 def load_wins_loses():
@@ -18,9 +18,23 @@ def get_data_count():
   wins, loses = load_wins_loses()
   return wins.shape[0] + loses.shape[0]
 
-def generate_new_pairs(wins, loses):
+def _generate_new_pairs(wins, loses):
+  # indexing mmap randomly is the bottleneck
+  # hack: choose continuous samples for fast indexing
+  i, j = np.random.choice(wins.shape[0]-pair_count), np.random.choice(loses.shape[0]-pair_count)
+  # moves data to gpu
+  win_samples, loss_samples = Tensor(wins[i:i+pair_count]), Tensor(loses[j:j+pair_count])
+  # tensor puzzles ftw
+  conditions =  Tensor.rand((pair_count, 1)) <= 0.5
+  x1 = Tensor.where(conditions, win_samples, loss_samples)
+  x2 = Tensor.where(conditions, loss_samples, win_samples)
+  y = Tensor.where(conditions, Tensor([[1.0, 0.0]]), Tensor([[0.0, 1.0]]))
+  return x1, x2, y
+
+def generate_new_pairs(wins, loses, with_test=False):
   x1, x2, y = _generate_new_pairs(wins, loses)
   assert x1.shape[0] == x2.shape[0] == y.shape[0] == pair_count
+  if not with_test: return x1, x2, y, None, None, None
   ratio = 0.8
   s1, s2 = math.ceil(x1.shape[0]*ratio), math.ceil(x1.shape[0]*(1-ratio))
   x1_train, x1_test = x1.split([s1, s2])
@@ -28,25 +42,12 @@ def generate_new_pairs(wins, loses):
   y_train, y_test = y.split([s1, s2])
   return x1_train, x2_train, y_train, x1_test, x2_test, y_test
 
-def _generate_new_pairs(wins, loses): 
-  # tensor puzzles ftw
-  # TODO: copy to gpu is the bottlneck
-  win_samples = Tensor(wins[np.random.choice(wins.shape[0], pair_count)])
-  loss_samples = Tensor(loses[np.random.choice(loses.shape[0], pair_count)])
-  conditions =  Tensor.rand((pair_count, 1)) <= 0.5
-  x1 = Tensor.where(conditions, win_samples, loss_samples)
-  x2 = Tensor.where(conditions, loss_samples, win_samples)
-  y = Tensor.where(conditions, Tensor([[1.0, 0.0]]), Tensor([[0.0, 1.0]]))
-  return x1, x2, y
-
 # convert fen to bitboard
 def serialize(board: chess.Board):
   mapping = {'p': 0, 'n': 1, 'b': 2, 'r': 3, 'q': 4, 'k': 5}
-
   # 2 sides, 6 pieces, 64 squares = 2*6*64 = 768 bits
   # 5 extra bits -> 1 bit side to move, 4 bits for castling rights = 773 bits
   bitboard = np.zeros(2*6*64+5, dtype=int)
-
   for i in range(64):
     if board.piece_at(i):
       piece= board.piece_at(i)
