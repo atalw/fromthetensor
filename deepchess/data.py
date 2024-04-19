@@ -32,7 +32,10 @@ def _generate_new_pairs(wins, loses, pair_count):
   assert y.shape[1] == 2
   return x1, x2, y
 
-def generate_new_pairs(wins, loses, with_test=False):
+def generate_test_set():
+  wins, loses = load_wins_loses(mmap=False)
+  n_test = 100_000
+  wins, loses = wins[n_test:], loses[n_test:]
   x1, x2, y = _generate_new_pairs(wins, loses)
   if not with_test: return x1, x2, y, None, None, None
   ratio = 0.8

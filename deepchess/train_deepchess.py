@@ -33,26 +33,16 @@ def train_step(X1_train, X2_train, Y_train) -> Tuple[Tensor, Tensor]:
     acc = (out.argmax(axis=-1) == labels.argmax(axis=-1)).mean()
     return loss.realize(), acc.realize()
 
-def evaluate(model, X1_test, X2_test, Y_test, BS=128):
+@TinyJit
+def evaluate(model, X1_test, X2_test, Y_test):
   Tensor.training = False
-  def numpy_eval(Y_test):
-    Y_test_preds_out = np.zeros(list(Y_test.shape))
-    for i in trange((len(Y_test)-1)//BS+1):
-      x1 = Tensor(X1_test[i*BS:(i+1)*BS])
-      x2 = Tensor(X2_test[i*BS:(i+1)*BS])
+  out_one = pos2vec.encode(X1_test)
+  out_two = pos2vec.encode(X2_test)
+  input = Tensor.cat(out_one, out_two, dim=-1)
 
-      out_one = pos2vec.encode(x1)
-      out_two = pos2vec.encode(x2)
-      input = Tensor.cat(out_one, out_two, dim=-1)
-
-      out = model(input)
-      Y_test_preds_out[i*BS:(i+1)*BS] = out.numpy()
-
-    return  (Y_test_preds_out.argmax(axis=-1) == Y_test.argmax(axis=-1)).mean()
-
-  acc = numpy_eval(Y_test)
-  print("test set accuracy is %f" % acc)
-  return acc
+  out = model(input)
+  acc = (out.argmax(axis=-1) == Y_test.argmax(axis=-1)).mean()
+  return acc.realize()
 
 if __name__ == "__main__":
   start_epoch = getenv("EPOCH", 0)
@@ -87,7 +77,9 @@ if __name__ == "__main__":
     del X1_train, X2_train, Y_train
     safe_save(get_state_dict(model), f"./ckpts/deepchess_2m_600k_epoch_{i}.safe")
   
-  evaluate(model, X1_test.numpy(), X2_test.numpy(), Y_test.numpy())
+  x1_test, x2_test, y_test = data.generate_test_set()
+  acc = evaluate(model, x1_test, x2_test, y_test)
+  print("test set accuracy is %f" % acc.numpy())
 
   fn = f"./ckpts/deepchess_2m_600k.safe"
   safe_save(get_state_dict(model), fn)
