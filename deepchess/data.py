@@ -12,7 +12,7 @@ def load_wins_loses(mmap=True):
   return wins, loses
 
 def load_new_pairs(i):
-  f = np.load(f"data/pairs/pairs_{i}.npz", mmap_mode='c')
+  f = np.load(f"data/pairs_600k/pairs_{i}.npz", mmap_mode='c')
   x1, x2, y = f['x1'], f['x2'], f['y']
   return Tensor(x1, dtype=dtypes.float32), Tensor(x2, dtype=dtypes.float32), Tensor(y, dtype=dtypes.float32) # move to gpu
 
@@ -117,5 +117,5 @@ def generate_fen_dataset(num_samples):
 
 if __name__ == "__main__":
   filename_pgn = "data/CCRL-4040.[1828834].pgn"
-  # generate_fen_dataset(1e6 * 2)
-  preprocess_pairs(600_000)
+  generate_fen_dataset(1e6 * 4)
+  # preprocess_pairs(1e6)
