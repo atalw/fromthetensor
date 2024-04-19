@@ -20,6 +20,7 @@ class Distilled:
       nn.Linear(100, 100),
       nn.Linear(100, 100),
       nn.Linear(100, 2),
+      lambda x: x.sigmoid(),
     ]
 
   

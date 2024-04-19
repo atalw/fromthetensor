@@ -23,7 +23,7 @@ def train_step(x1_train, x2_train, y_train) -> Tuple[Tensor, Tensor]:
     # according to the paper, pos2vec is part of siamese and weights for pos2vec are updated alongside siamese 
     input = Tensor.cat(pos2vec.encode(x1_train), pos2vec.encode(x2_train), dim=-1)
     out = model(input)
-    loss = out.binary_crossentropy_logits(y_train)
+    loss = out.binary_crossentropy(y_train)
     opt.zero_grad()
     loss.backward()
     opt.step()
@@ -39,7 +39,7 @@ if __name__ == "__main__":
   model = siamese.Siamese()
 
   if start_epoch > 0:
-    load_state_dict(model, safe_load(f"./ckpts/inter/deepchess_1m_epoch_{start_epoch-1}.safe"))
+    load_state_dict(model, safe_load(f"./ckpts/inter/deepchess_600k_epoch_{start_epoch-1}.safe"))
     learning_rate *= siamese.hyp['opt']['lr_decay']**start_epoch
 
   opt = optim.Adam(get_parameters(model), lr=learning_rate)
@@ -54,12 +54,12 @@ if __name__ == "__main__":
     st = cl
     del x1_train, x2_train, y_train
     opt.lr = opt.lr * siamese.hyp['opt']['lr_decay']
-    safe_save(get_state_dict(model), f"./ckpts/inter/deepchess_1m_epoch_{i}.safe")
+    safe_save(get_state_dict(model), f"./ckpts/inter/deepchess_600k_epoch_{i}.safe")
   
   x1_test, x2_test, y_test = data.generate_test_set()
   acc = evaluate(model, x1_test, x2_test, y_test)
   print("test set accuracy is %f" % acc.numpy())
 
-  fn = f"./ckpts/deepchess_2m_600k.safe"
+  fn = f"./ckpts/deepchess_600k.safe" # 0.758990 acc
   safe_save(get_state_dict(model), fn)
   print(f" *** Model saved to {fn} ***")
