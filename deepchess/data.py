@@ -8,29 +8,23 @@ import random
 filename_fen = "data/dataset"
 # pair_count = 500
 
-def load_wins_loses():
-  wins_on_disk = np.load(f"{filename_fen}_wins.npy", mmap_mode='c')
-  loses_on_disk = np.load(f"{filename_fen}_loses.npy", mmap_mode='c')
-  return wins_on_disk, loses_on_disk
+def load_wins_loses(mmap=True):
+  wins = np.load(f"{filename_fen}_wins.npy", mmap_mode='c' if mmap else None)
+  loses = np.load(f"{filename_fen}_loses.npy", mmap_mode='c' if mmap else None)
+  return wins, loses
 
 def get_data_count():
   wins, loses = load_wins_loses()
   return wins.shape[0] + loses.shape[0]
 
 def _generate_new_pairs(wins, loses, pair_count):
-  # store last n positions for test
-  n_test = 100_000
-  # indexing mmap randomly is the bottleneck, hack: choose continuous samples for fast indexing
-  i, j = np.random.choice(wins.shape[0]-pair_count-n_test), np.random.choice(loses.shape[0]-pair_count-n_test)
-  # moves data to gpu
-  win_samples, loss_samples = Tensor(wins[i:i+pair_count]), Tensor(loses[j:j+pair_count])
-  shuffle1, shuffle2 = Tensor.randint(pair_count, high=pair_count), Tensor.randint(pair_count, high=pair_count)
-  win_samples, loss_samples = win_samples[shuffle1], loss_samples[shuffle2]
+  win_samples = wins[np.random.randint(0, wins.shape[0], pair_count)]
+  loss_samples = loses[np.random.randint(0, loses.shape[0], pair_count)]
   # tensor puzzles ftw
-  conditions =  Tensor.rand((pair_count, 1)) <= 0.5
-  x1 = Tensor.where(conditions, win_samples, loss_samples)
-  x2 = Tensor.where(conditions, loss_samples, win_samples)
-  y = Tensor.where(conditions, Tensor([[1.0, 0.0]]), Tensor([[0.0, 1.0]]))
+  conditions =  np.random.rand(pair_count, 1) <= 0.5
+  x1 = np.where(conditions, win_samples, loss_samples)
+  x2 = np.where(conditions, loss_samples, win_samples)
+  y = np.where(conditions, np.array([[1.0, 0.0]]), np.array([[0.0, 1.0]]))
   # sanity
   assert len(x1.shape) == len(x2.shape) == len(y.shape) == 2
   assert x1.shape[0] == x2.shape[0] == y.shape[0] == pair_count
@@ -55,7 +49,9 @@ def load_new_pairs(i):
 
 # generate pairs and store on disk before training
 def preprocess_pairs(pair_count):
-  wins, loses = load_wins_loses()
+  wins, loses = load_wins_loses(mmap=False)
+  n_test = 100_000 # keep last n positions for test set
+  wins, loses = wins[:-n_test], loses[:-n_test]
   for i in range(1000):
     print(f"processing set {i}")
     x1, x2, y = _generate_new_pairs(wins, loses, pair_count)
