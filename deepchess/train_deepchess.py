@@ -1,13 +1,23 @@
-import time
 from typing import Tuple
+import time
+from tqdm import trange
 from tinygrad import Tensor, GlobalCounters, TinyJit
 from tinygrad.nn import optim
 from tinygrad.nn.state import get_parameters, get_state_dict, safe_load, safe_save, load_state_dict
 import data
 import models.pos2vec as pos2vec_model
 import models.siamese as siamese
-from tqdm import trange
 from tinygrad.helpers import getenv
+
+@TinyJit
+def evaluate(model, X1_test, X2_test, Y_test):
+  Tensor.training = False
+  out_one = pos2vec.encode(X1_test)
+  out_two = pos2vec.encode(X2_test)
+  input = Tensor.cat(out_one, out_two, dim=-1)
+  out = model(input)
+  acc = (out.argmax(axis=-1) == Y_test.argmax(axis=-1)).mean()
+  return acc.realize()
 
 @TinyJit
 def train_step(x1_train, x2_train, y_train) -> Tuple[Tensor, Tensor]:
@@ -24,16 +34,6 @@ def train_step(x1_train, x2_train, y_train) -> Tuple[Tensor, Tensor]:
     acc = (out.argmax(axis=-1) == y_train.argmax(axis=-1)).mean()
     return loss.realize(), acc.realize()
 
-@TinyJit
-def evaluate(model, X1_test, X2_test, Y_test):
-  Tensor.training = False
-  out_one = pos2vec.encode(X1_test)
-  out_two = pos2vec.encode(X2_test)
-  input = Tensor.cat(out_one, out_two, dim=-1)
-  out = model(input)
-  acc = (out.argmax(axis=-1) == Y_test.argmax(axis=-1)).mean()
-  return acc.realize()
-
 if __name__ == "__main__":
   start_epoch = getenv("EPOCH", 0)
   epochs = siamese.hyp['epochs']
@@ -43,7 +43,7 @@ if __name__ == "__main__":
   model = siamese.Siamese()
 
   if start_epoch > 0:
-    load_state_dict(model, safe_load(f"./ckpts/deepchess_2m_600k_epoch_{start_epoch-1}.safe"))
+    load_state_dict(model, safe_load(f"./ckpts/inter/deepchess_1m_epoch_{start_epoch-1}.safe"))
     learning_rate *= siamese.hyp['opt']['lr_decay']**start_epoch
 
   opt = optim.Adam(get_parameters(model), lr=learning_rate)
@@ -58,7 +58,7 @@ if __name__ == "__main__":
     st = cl
     del x1_train, x2_train, y_train
     opt.lr = opt.lr * siamese.hyp['opt']['lr_decay']
-    safe_save(get_state_dict(model), f"./ckpts/deepchess_2m_600k_epoch_{i}.safe")
+    safe_save(get_state_dict(model), f"./ckpts/inter/deepchess_1m_epoch_{i}.safe")
   
   x1_test, x2_test, y_test = data.generate_test_set()
   acc = evaluate(model, x1_test, x2_test, y_test)

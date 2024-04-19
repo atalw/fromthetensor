@@ -1,6 +1,6 @@
 import random
 import numpy as np
-from tinygrad import Tensor
+from tinygrad import Tensor, dtypes
 import chess.pgn
 import random
 
@@ -12,9 +12,9 @@ def load_wins_loses(mmap=True):
   return wins, loses
 
 def load_new_pairs(i):
-  f = np.load(f"data/pairs/pairs_{i}")
+  f = np.load(f"data/pairs/pairs_{i}.npz", mmap_mode='c')
   x1, x2, y = f['x1'], f['x2'], f['y']
-  return Tensor(x1), Tensor(x2), Tensor(y) # move to gpu
+  return Tensor(x1, dtype=dtypes.float32), Tensor(x2, dtype=dtypes.float32), Tensor(y, dtype=dtypes.float32) # move to gpu
 
 def _generate_new_pairs(wins, loses, pair_count):
   win_samples = wins[np.random.randint(0, wins.shape[0], pair_count)]
@@ -32,11 +32,11 @@ def _generate_new_pairs(wins, loses, pair_count):
   return x1, x2, y
 
 def generate_test_set():
-  wins, loses = load_wins_loses(mmap=False)
+  wins, loses = load_wins_loses(mmap=True)
   n_test = 100_000
   wins, loses = wins[n_test:], loses[n_test:]
-  x1, x2, y = _generate_new_pairs(wins, loses)
-  return Tensor(x1), Tensor(x2), Tensor(y)
+  x1, x2, y = _generate_new_pairs(wins, loses, n_test)
+  return Tensor(x1, dtype=dtypes.float32), Tensor(x2, dtype=dtypes.float32), Tensor(y, dtype=dtypes.float32)
 
 # generate pairs and store on disk before training
 def preprocess_pairs(pair_count):
