@@ -1,21 +1,20 @@
 import random
 import numpy as np
-from tinygrad import Tensor, dtypes, Device
+from tinygrad import Tensor
 import chess.pgn
-import math
 import random
 
 filename_fen = "data/dataset"
-# pair_count = 500
 
 def load_wins_loses(mmap=True):
   wins = np.load(f"{filename_fen}_wins.npy", mmap_mode='c' if mmap else None)
   loses = np.load(f"{filename_fen}_loses.npy", mmap_mode='c' if mmap else None)
   return wins, loses
 
-def get_data_count():
-  wins, loses = load_wins_loses()
-  return wins.shape[0] + loses.shape[0]
+def load_new_pairs(i):
+  f = np.load(f"data/pairs/pairs_{i}")
+  x1, x2, y = f['x1'], f['x2'], f['y']
+  return Tensor(x1), Tensor(x2), Tensor(y) # move to gpu
 
 def _generate_new_pairs(wins, loses, pair_count):
   win_samples = wins[np.random.randint(0, wins.shape[0], pair_count)]
@@ -37,17 +36,6 @@ def generate_test_set():
   n_test = 100_000
   wins, loses = wins[n_test:], loses[n_test:]
   x1, x2, y = _generate_new_pairs(wins, loses)
-  if not with_test: return x1, x2, y, None, None, None
-  ratio = 0.8
-  s1, s2 = math.ceil(x1.shape[0]*ratio), math.ceil(x1.shape[0]*(1-ratio))
-  x1_train, x1_test = x1.split([s1, s2])
-  x2_train, x2_test = x2.split([s1, s2])
-  y_train, y_test = y.split([s1, s2])
-  return x1_train, x2_train, y_train, x1_test, x2_test, y_test
-
-def load_new_pairs(i):
-  f = np.load(f"data/pairs/pairs_{i}")
-  x1, x2, y = f['x1'], f['x2'], f['y']
   return Tensor(x1), Tensor(x2), Tensor(y)
 
 # generate pairs and store on disk before training
@@ -58,7 +46,6 @@ def preprocess_pairs(pair_count):
   for i in range(1000):
     print(f"processing set {i}")
     x1, x2, y = _generate_new_pairs(wins, loses, pair_count)
-    x1, x2, y = x1.numpy(), x2.numpy(), y.numpy()
     np.savez_compressed(f"data/pairs/pairs_{i}", x1=x1, x2=x2, y=y)
 
 # convert fen to bitboard
@@ -78,7 +65,6 @@ def serialize(board: chess.Board):
   bitboard[-3] = int(board.has_kingside_castling_rights(False))
   bitboard[-4] = int(board.has_queenside_castling_rights(True))
   bitboard[-5] = int(board.has_queenside_castling_rights(False))
-
   return bitboard
 
 def get_random_positions(game, count):
@@ -133,4 +119,3 @@ if __name__ == "__main__":
   filename_pgn = "data/CCRL-4040.[1828834].pgn"
   # generate_fen_dataset(1e6 * 2)
   preprocess_pairs(600_000)
-  # preprocess_pairs(10)
