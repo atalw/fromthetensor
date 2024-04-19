@@ -10,22 +10,18 @@ import models.siamese as siamese
 from tinygrad.helpers import getenv
 
 @TinyJit
-def evaluate(model, X1_test, X2_test, Y_test):
+def evaluate(model, x1_test, x2_test, y_test):
   Tensor.training = False
-  out_one = pos2vec.encode(X1_test)
-  out_two = pos2vec.encode(X2_test)
-  input = Tensor.cat(out_one, out_two, dim=-1)
+  input = Tensor.cat(pos2vec.encode(x1_test), pos2vec.encode(x2_test), dim=-1)
   out = model(input)
-  acc = (out.argmax(axis=-1) == Y_test.argmax(axis=-1)).mean()
+  acc = (out.argmax(axis=-1) == y_test.argmax(axis=-1)).mean()
   return acc.realize()
 
 @TinyJit
 def train_step(x1_train, x2_train, y_train) -> Tuple[Tensor, Tensor]:
   with Tensor.train():
     # according to the paper, pos2vec is part of siamese and weights for pos2vec are updated alongside siamese 
-    out_one = pos2vec.encode(x1_train)
-    out_two = pos2vec.encode(x2_train)
-    input = Tensor.cat(out_one, out_two, dim=-1)
+    input = Tensor.cat(pos2vec.encode(x1_train), pos2vec.encode(x2_train), dim=-1)
     out = model(input)
     loss = out.binary_crossentropy_logits(y_train)
     opt.zero_grad()

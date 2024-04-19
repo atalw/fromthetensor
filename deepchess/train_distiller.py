@@ -13,25 +13,25 @@ from tinygrad.helpers import getenv
 @TinyJit
 def evaluate(x1_test, x2_test, y_test):
   Tensor.training = False
-  out = distilled(Tensor.cat(x1_test, x2_test, dim=-1))
+  input = Tensor.cat(x1_test, x2_test, dim=-1)
+  out = distilled(input)
   return  ((out.argmax(axis=-1)) == y_test.argmax(axis=-1)).mean()
 
 def deepchess_inference(x1, x2):
-  out_one = pos2vec.encode(x1)
-  out_two = pos2vec.encode(x2)
-  input = Tensor.cat(out_one, out_two, dim=-1)
+  input = Tensor.cat(pos2vec.encode(x1), pos2vec.encode(x2), dim=-1)
   return deepchess(input).realize()
 
 @TinyJit
 def train_step(x1_train, x2_train, y_train) -> Tuple[Tensor, Tensor]:
   target = deepchess_inference(x1_train, x2_train) # soft target
   with Tensor.train():
-    out = distilled(Tensor.cat(x1_train, x2_train, dim=-1))
+    input = Tensor.cat(x1_train, x2_train, dim=-1)
+    out = distilled(input)
     loss = out.binary_crossentropy_logits(target)
     opt.zero_grad()
     loss.backward()
     opt.step()
-    acc = (out.argmax(axis=-1) == y_train.argmax(axis=-1)).mean()
+    acc = (out.argmax(axis=-1) == y_train.argmax(axis=-1)).mean() # measure against hard target
     return loss.realize(), acc.realize()
 
 if __name__ == "__main__":
