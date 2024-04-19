@@ -1,7 +1,7 @@
 from typing import Tuple
 import time
 from tqdm import trange
-from tinygrad import Tensor, GlobalCounters, TinyJit
+from tinygrad import Tensor, GlobalCounters, TinyJit, dtypes
 from tinygrad.nn import optim
 from tinygrad.nn.state import get_parameters, get_state_dict, safe_load, safe_save, load_state_dict
 import data
@@ -24,7 +24,7 @@ def deepchess_inference(x1, x2):
   return deepchess(input).realize()
 
 @TinyJit
-def train_step(x1_train, x2_train, y_train) -> Tuple[Tensor, Tensor]:
+def train_entire_step(x1_train, x2_train, y_train) -> Tuple[Tensor, Tensor]:
   with Tensor.train():
     input = Tensor.cat(x1_train, x2_train, dim=-1)
     soft_target = deepchess_inference(x1_train, x2_train)
@@ -35,6 +35,32 @@ def train_step(x1_train, x2_train, y_train) -> Tuple[Tensor, Tensor]:
     opt.step()
     acc = (out.argmax(axis=-1) == y_train.argmax(axis=-1)).mean() # measure against hard target
     return loss.realize(), acc.realize()
+
+@TinyJit
+def train_encode_step(x1_train, x2_train, y_train) -> Tuple[Tensor, Tensor]:
+  with Tensor.train():
+    input = Tensor.cat(x1_train, x2_train, dim=-1)
+    soft_target = Tensor.cat(pos2vec.encode(x1_train), pos2vec.encode(x2_train), dim=-1)
+    out = distilled.encode(input)
+    loss = (out-soft_target).square().mean()
+    opt.zero_grad()
+    loss.backward()
+    opt.step()
+    # TODO: is acc correct?
+    acc = (out == soft_target).mean()
+    return loss.realize(), acc.realize()
+
+def train_step_wrapper(i, fxn):
+  global st
+  GlobalCounters.reset()
+  cl = time.monotonic()
+  x1_train, x2_train, y_train = data.load_new_pairs(i)
+  loss, acc = fxn(x1_train, x2_train, y_train)
+  t.set_description(f"lr: {opt.lr.item():9.9f} loss: {loss.numpy():4.2f} acc: {acc.numpy():5.2f}% {GlobalCounters.global_ops*1e-9/(cl-st):9.2f} GFLOPS")
+  st = cl
+  del x1_train, x2_train, y_train
+  opt.lr = opt.lr * distilled_model.hyp['opt']['lr_decay']
+  return loss, acc
 
 if __name__ == "__main__":
   epochs = distilled_model.hyp['epochs']
@@ -47,24 +73,21 @@ if __name__ == "__main__":
   load_state_dict(deepchess, safe_load("./ckpts/deepchess_600k.safe"))
   distilled = distilled_model.Distilled()
 
-  if start_epoch > 0:
+  # mimic feature extraction first, then train entire network
+  if start_epoch == 0:
+    opt = optim.Adam(get_parameters(distilled.layers1), lr=learning_rate)
+    st = time.monotonic()
+    for i in (t := trange(epochs)): train_step_wrapper(i, train_encode_step)
+  else:
     load_state_dict(distilled, safe_load(f"./ckpts/inter/distilled_600k_epoch_{start_epoch-1}.safe"))
     learning_rate *= distilled_model.hyp['opt']['lr_decay']**start_epoch
 
   opt = optim.Adam(get_parameters(distilled), lr=learning_rate)
-
   history = {}
   st = time.monotonic()
   for i in (t := trange(start_epoch, epochs)):
-    GlobalCounters.reset()
-    x1_train, x2_train, y_train = data.load_new_pairs(i)
-    cl = time.monotonic()
-    loss, acc = train_step(x1_train, x2_train, y_train)
-    t.set_description(f"lr: {opt.lr.item():9.9f} loss: {loss.numpy():4.2f} acc: {acc.numpy():5.2f}% {GlobalCounters.global_ops*1e-9/(cl-st):9.2f} GFLOPS")
-    st = cl
+    loss, acc = train_step_wrapper(i, train_entire_step)
     history[i], history[i]['loss'], history[i]['acc'] = {}, loss.numpy(), acc.numpy()
-    del x1_train, x2_train, y_train
-    opt.lr = opt.lr * distilled_model.hyp['opt']['lr_decay']
     safe_save(get_state_dict(distilled), f"./ckpts/inter/distilled_600k_epoch_{i}.safe")
     with open('distilled_history.pkl', 'wb') as f: dump(history, f)
   

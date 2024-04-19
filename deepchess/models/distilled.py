@@ -11,18 +11,27 @@ hyp = {
 
 class Distilled:
   def __init__(self):
-    self.layers = [
+    self.layers1 = [
       nn.Linear(773*2, 100*2),
+      lambda x: x.relu(),
+      nn.Linear(100*2, 100*2),
+      lambda x: x.relu(),
+      nn.Linear(100*2, 100*2),
+      lambda x: x.relu(),
+      nn.Linear(100*2, 100*2),
+      lambda x: x.relu(),
+    ]
+    self.layers2 = [
       nn.Linear(100*2, 100),
+      lambda x: x.relu(),
       nn.Linear(100, 100),
-      nn.Linear(100, 100),
-
-      nn.Linear(100, 100),
-      nn.Linear(100, 100),
+      lambda x: x.relu(),
       nn.Linear(100, 2),
-      lambda x: x.sigmoid(),
+      lambda x: x.relu(),
     ]
 
+  def encode(self, x: Tensor) -> Tensor:
+    return x.sequential(self.layers1)
   
   def __call__(self, x: Tensor) -> Tensor:
-    return x.sequential(self.layers)
+    return self.encode(x).sequential(self.layers2)
