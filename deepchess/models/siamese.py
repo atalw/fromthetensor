@@ -18,7 +18,7 @@ class Siamese:
       nn.Linear(200, 100),
       lambda x: x.relu(),
       nn.Linear(100, 2),
-      lambda x: x.sigmoid(), # needed to use as soft target
+      lambda x: x.relu(), # needed to use model as soft target
     ]
 
   
