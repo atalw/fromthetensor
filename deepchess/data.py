@@ -6,6 +6,9 @@ import random
 
 filename_fen = "data/dataset"
 
+def load_all_positions(mmap=True):
+  return np.load(f"{filename_fen}_combined.npy", mmap_mode='c' if mmap else None)
+
 def load_wins_loses(mmap=True):
   wins = np.load(f"{filename_fen}_wins.npy", mmap_mode='c' if mmap else None)
   loses = np.load(f"{filename_fen}_loses.npy", mmap_mode='c' if mmap else None)

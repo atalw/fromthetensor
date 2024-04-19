@@ -5,7 +5,6 @@ from tinygrad.nn import optim
 from tinygrad.nn.state import get_parameters, get_state_dict, safe_save
 import models.pos2vec as autoencoder 
 import data
-import random
 from tqdm import trange
 
 @TinyJit
@@ -29,17 +28,14 @@ def train_step_wrapper(x_train, layer):
   st = cl
 
 if __name__ == "__main__":
-  n = 500_000 # paper uses 2m random positions
+  n = 600_000 # paper uses 2m random positions
   epochs = autoencoder.hyp['epochs']
   model = autoencoder.Pos2Vec()
   learning_rate = autoencoder.hyp['opt']['lr']
-  wins, loses = data.load_wins_loses()
-  i, j = np.random.randint(low=0, high=wins.shape[0]-n//2), np.random.randint(low=0, high=loses.shape[0]-n//2)
-  wins_batch = Tensor(wins[i:i+n//2], dtype=dtypes.float32)
-  loses_batch  = Tensor(loses[j:j+n//2], dtype=dtypes.float32)
-  del wins, loses
-  x_train = Tensor.cat(wins_batch, loses_batch, dim=0)
-  x_train = x_train[Tensor.randint(n, high=x_train.shape[0])] # shuffle for good measure
+  positions = data.load_all_positions()
+  i = np.random.randint(low=0, high=positions.shape[0]-n//2)
+  x_train = Tensor(positions[i:i+n//2], dtype=dtypes.float32)
+  del positions
 
   st = time.monotonic()
   opt = optim.SGD(get_parameters(model.layer0), lr=learning_rate)
