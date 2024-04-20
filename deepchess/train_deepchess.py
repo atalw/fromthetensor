@@ -42,7 +42,7 @@ if __name__ == "__main__":
     load_state_dict(model, safe_load(f"./ckpts/inter/deepchess_epoch_{start_epoch-1}.safe"))
     learning_rate *= siamese.hyp['opt']['lr_decay']**start_epoch
 
-  # pos2vec is part of siamese and weights for pos2vec are updated alongside
+  # pos2vec is finetuned while training siamese 
   opt = optim.Adam(get_parameters(pos2vec) + get_parameters(model), lr=learning_rate)
 
   st = time.monotonic()

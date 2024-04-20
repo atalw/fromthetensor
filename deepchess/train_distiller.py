@@ -68,9 +68,9 @@ if __name__ == "__main__":
   start_epoch = getenv("EPOCH", 0)
 
   pos2vec = pos2vec_model.Pos2Vec()
-  load_state_dict(pos2vec, safe_load("./ckpts/pos2vec_2m.safe"))
+  load_state_dict(pos2vec, safe_load("./ckpts/pos2vec_finetuned.safe"))
   deepchess = siamese_model.Siamese()
-  load_state_dict(deepchess, safe_load("./ckpts/deepchess_600k.safe"))
+  load_state_dict(deepchess, safe_load("./ckpts/deepchess.safe"))
   distilled = distilled_model.Distilled()
 
   # mimic feature extraction first, then train entire network
@@ -79,7 +79,7 @@ if __name__ == "__main__":
     st = time.monotonic()
     for i in (t := trange(epochs)): train_step_wrapper(i, train_encode_step)
   else:
-    load_state_dict(distilled, safe_load(f"./ckpts/inter/distilled_600k_epoch_{start_epoch-1}.safe"))
+    load_state_dict(distilled, safe_load(f"./ckpts/inter/distilled_epoch_{start_epoch-1}.safe"))
     learning_rate *= distilled_model.hyp['opt']['lr_decay']**start_epoch
 
   opt = optim.Adam(get_parameters(distilled), lr=learning_rate)
@@ -88,14 +88,14 @@ if __name__ == "__main__":
   for i in (t := trange(start_epoch, epochs)):
     loss, acc = train_step_wrapper(i, train_entire_step)
     history[i], history[i]['loss'], history[i]['acc'] = {}, loss.numpy(), acc.numpy()
-    safe_save(get_state_dict(distilled), f"./ckpts/inter/distilled_600k_epoch_{i}.safe")
+    safe_save(get_state_dict(distilled), f"./ckpts/inter/distilled_epoch_{i}.safe")
     with open('distilled_history.pkl', 'wb') as f: dump(history, f)
   
   x1_test, x2_test, y_test = data.generate_test_set()
   acc = evaluate(x1_test, x2_test, y_test)
   print("test set accuracy is %f" % acc.numpy())
 
-  fn = f"./ckpts/distilled_600k.safe"
+  fn = f"./ckpts/distilled.safe"
   safe_save(get_state_dict(distilled), fn)
   print(f" *** Model saved to {fn} ***")
 
