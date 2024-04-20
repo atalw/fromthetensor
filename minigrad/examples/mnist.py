@@ -1,0 +1,1 @@
+# we will build and run mnist
