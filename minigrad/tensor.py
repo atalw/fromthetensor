@@ -1,6 +1,9 @@
 # used teenygrad as the learning resource - https://github.com/tinygrad/teenygrad
+from __future__ import annotations
 from typing import Tuple, Optional
 from dtype import Dtype
+import numpy as np
+from helpers import prod
 
 class Tensor:
   def __init__(self, data, device=None, dtype=None, requires_grad=None):
@@ -49,18 +52,19 @@ class Tensor:
         t.grad = g if t.grad is None else (t.grad + g)
       del t0._ctx
     return self
+
+  # data handling
+  def detach(self) -> Tensor: return Tensor(self.data, device=self.device, requires_grad=False)
+  def numpy(self) -> np.ndarray: return self.detach().data
+
+  # convenience
+  def numel(self) -> int: return prod(self.shape)
+  def element_size(self) -> int: return self.dtype.itemsize
+  def nbytes(self) -> int: return self.numel() * self.element_size()
     
 
 """
 *** high level tensor ops ***
-
-# data handling
-numpy
-
-# convenience
-numel
-element_size
-nbytes
 
 # creation helpers
 empty
