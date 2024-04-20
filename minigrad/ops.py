@@ -1,36 +1,37 @@
+from enum import Enum, auto
+
 """
 basic low-level ops
 all high level tensor ops will boil down to these
-
-# unary ops
-exp2
-log2
-sin
-sqrt
-recip
-neg
-
-# binary ops
-add
-sub
-mul
-div
-max
-mod
-
-# ternary ops
-where
-
-# reduce ops
-sum
-max
-
-# movement ops
-reshape
-permute
-expand
-pad
-shrink
-stride
-
 """
+
+class UnaryOps(Enum): 
+  EXP2 = auto()
+  LOG2 = auto()
+  SIN = auto()
+  SQRT = auto()
+  RECIP = auto()
+  NEG = auto()
+
+class BinaryOps(Enum):
+  ADD = auto()
+  SUB = auto()
+  MUL = auto()
+  DIV = auto()
+  MAX = auto()
+  MOD = auto()
+
+class TernaryOps(Enum):
+  WHERE = auto()
+
+class ReduceOps(Enum):
+  SUM = auto()
+  MAX = auto()
+
+class MovementOps(Enum):
+  RESHAPE = auto()
+  PERMUTE = auto()
+  EXPAND = auto()
+  PAD = auto()
+  SHRINK = auto()
+  STRIDE = auto()
