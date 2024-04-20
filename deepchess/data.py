@@ -19,6 +19,11 @@ def load_new_pairs(i):
   x1, x2, y = f['x1'], f['x2'], f['y']
   return Tensor(x1, dtype=dtypes.float32), Tensor(x2, dtype=dtypes.float32), Tensor(y, dtype=dtypes.float32) # move to gpu
 
+def load_n_positions(n):
+  positions = load_all_positions()
+  i = np.random.randint(low=0, high=positions.shape[0]-n)
+  return Tensor(positions[i:i+n], dtype=dtypes.float32).realize()
+
 def _generate_new_pairs(wins, loses, pair_count):
   win_samples = wins[np.random.randint(0, wins.shape[0], pair_count)]
   loss_samples = loses[np.random.randint(0, loses.shape[0], pair_count)]
