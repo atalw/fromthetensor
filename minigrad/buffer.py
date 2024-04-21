@@ -16,6 +16,7 @@ class Buffer:
 
   def const(self, x) -> Buffer: return Buffer(np.full_like(self._np, x))
 
+  # element-wise ops
   def e(self, op, *srcs:Buffer):
     if op == UnaryOps.NEG: ret = -self._np
     elif op == UnaryOps.EXP2: ret = np.exp2(self._np)
@@ -31,13 +32,15 @@ class Buffer:
     else: raise NotImplementedError(op)
     return Buffer(ret.astype(self.dtype.np, copy=False))
   
+  # reduce ops
   def r(self, op, new_shape):
     assert len(self.shape) == len(new_shape, "reduce shapes must have same dimesions")
     axis = tuple(i for i,(a,b) in enumerate(zip(self.shape, new_shape)) if a != b)
     if op == ReduceOps.SUM: return Buffer(self._np.sum(axis, dtype=self._np.dtype, keepdims=True))
     elif op == ReduceOps.MAX: return Buffer(self._np.max(axis, keepdims=True))
     else: raise NotImplementedError(op)
-  
+
+  # movement ops
   def m(self, op, arg):
     if op == MovementOps.RESHAPE: return Buffer(self._np.reshape(arg))
     elif op == MovementOps.EXPAND: return Buffer(np.broadcast_to(self._np, arg))
