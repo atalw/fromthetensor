@@ -1,11 +1,20 @@
 import math
+from typing import Tuple, Optional
 from buffer import Buffer
+from tensor import Tensor
 from ops import UnaryOps, BinaryOps, TernaryOps, ReduceOps, MovementOps
 
 class Function:
-  def __init__(self):
-    pass
+  def __init__(self, device:str, *tensors:Tensor):
+    self.device = device
+    self.needs_input_grad = [t.requires_grad for t in tensors]
+    self.requires_grad = True if any(self.needs_input_grad) else None if None in self.needs_input_grad else False
+    if self.requires_grad: self.parents = tensors
 
+  def forward(self, *args, **kwargs): raise NotImplementedError(f"forward not implemented for {type(self)}")
+  def backward(self, *args, **kwargs): raise NotImplementedError(f"backward not implemented for {type(self)}")
+
+# *** unary ops ***
 
 class Zero(Function):
   def forward(self, x:Buffer) -> Buffer: return x.const(0)
@@ -57,7 +66,52 @@ class Neg(Function):
   def backward(self, grad:Buffer) -> Buffer: return grad.e(UnaryOps.NEG)
 
 
+# *** binary ops ***
 
+class Add(Function):
+  def forward(self, x:Buffer, y:Buffer) -> Buffer:
+    return x.e(BinaryOps.ADD, y)
+
+  def backward(self, grad:Buffer) -> Tuple[Optional[Buffer], Optional[Buffer]]:
+    return grad if self.needs_input_grad[0] else None, grad if self.needs_input_grad[1] else None
+
+class Sub(Function):
+  def forward(self, x:Buffer, y:Buffer) -> Buffer:
+    return x.e(BinaryOps.SUB, y)
+
+  def backward(self, grad:Buffer) -> Tuple[Optional[Buffer], Optional[Buffer]]:
+    return grad if self.needs_input_grad[0] else None, grad.e(UnaryOps.NEG) if self.needs_input_grad[1] else None
+
+class Mul(Function):
+  def forward(self, x:Buffer, y:Buffer) -> Buffer:
+    self.x, self.y = x, y
+    return x.e(BinaryOps.MUL, y)
+
+  def backward(self, grad:Buffer) -> Tuple[Optional[Buffer], Optional[Buffer]]:
+    return grad.e(BinaryOps.MUL, self.y) if self.needs_input_grad[0] else None, \
+           grad.e(BinaryOps.MUL, self.x) if self.needs_input_grad[1] else None
+
+class Div(Function):
+  def forward(self, x:Buffer, y:Buffer) -> Buffer:
+    self.x, self.y = x, y
+    return x.e(BinaryOps.DIV, y)
+
+  def backward(self, grad:Buffer) -> Tuple[Optional[Buffer], Optional[Buffer]]:
+    # d(x/y)/dy = x/(y^2)
+    return grad.e(BinaryOps.DIV, self.y) if self.needs_input_grad[0] else None, \
+           grad.e(UnaryOps.NEG).e(BinaryOps.MUL, self.x).e(BinaryOps.DIV, self.y.e(BinaryOps.MUL, self.y)) if self.needs_input_grad[1] else None
+
+# *** ternary ops ***
+
+class Where(Function):
+  def forward(self, x:Buffer, y:Buffer, z:Buffer) -> Buffer:
+    self.x = x
+    return x.e(TernaryOps.WHERE, y, z)
+
+  def backward(self, grad:Buffer) -> Tuple[Optional[Buffer], Optional[Buffer]]:
+    return None, \
+           self.x.e(TernaryOps.WHERE, grad, grad.const(0)) if self.needs_input_grad[1] else None, \
+           self.x.e(TernaryOps.WHERE, grad.const(0, grad)) if self.needs_input_grad[2] else None
 
 
 """
