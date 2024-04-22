@@ -20,6 +20,7 @@ class BinaryOps(Enum):
   DIV = auto()
   MAX = auto()
   MOD = auto()
+  CMPLT = auto()
 
 class TernaryOps(Enum):
   WHERE = auto()

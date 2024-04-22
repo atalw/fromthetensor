@@ -1,5 +1,6 @@
 import math
-from typing import Tuple, Optional
+from __future__ import annotations
+from typing import Tuple, Optional, Type
 from buffer import Buffer
 from tensor import Tensor
 from ops import UnaryOps, BinaryOps, TernaryOps, ReduceOps, MovementOps
@@ -26,6 +27,14 @@ class Function:
 
   def forward(self, *args, **kwargs): raise NotImplementedError(f"forward not implemented for {type(self)}")
   def backward(self, *args, **kwargs): raise NotImplementedError(f"backward not implemented for {type(self)}")
+
+  @classmethod
+  def apply(fxn:Type[Function], *x:Tensor, **kwargs) -> Tensor:
+    ctx = fxn(x[0].device, *x)
+    ret = Tensor(ctx.forward(*[t.data for t in x]), device=ctx.device, requires_grad=ctx.requires_grad)
+    if ctx.requires_grad and not Tensor.no_grad: ret._ctx = ctx
+    return ret
+
 
 # *** unary ops ***
 
@@ -77,6 +86,24 @@ class Sqrt(Function):
 class Neg(Function):
   def forward(self, x:Buffer) -> Buffer: return x.e(UnaryOps.NEG)
   def backward(self, grad:Buffer) -> Buffer: return grad.e(UnaryOps.NEG)
+
+class Relu(Function):
+  def forward(self, x:Buffer) -> Buffer:
+    self.ret = x.const(0).e(BinaryOps.MAX, x)
+    return self.ret
+
+  def backward(self, grad:Buffer) -> Buffer:
+    return self.ret.const(0).e(BinaryOps.CMPLT, self.ret).e(BinaryOps.MUL, grad)
+
+class Sigmoid(Function):
+  def forward(self, x:Buffer) -> Buffer:
+    # f(x) = 1/(1 + e^(-x))
+    self.ret = x.const(1).e(BinaryOps.DIV, x.const(1).e(BinaryOps.ADD, x.e(BinaryOps.MUL, x.const(-1/math.log(2))).e(UnaryOps.EXP2)))
+    return self.ret
+
+  def backward(self, grad:Buffer) -> Buffer:
+    # https://towardsdatascience.com/derivative-of-the-sigmoid-function-536880cf918e
+    return self.ret.e(BinaryOps.MUL, self.ret.cost(1).e(BinaryOps.SUB, self.ret)).e(BinaryOps.MUL, grad)
 
 # *** binary ops ***
 

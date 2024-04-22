@@ -1,9 +1,11 @@
 # used teenygrad as the learning resource - https://github.com/tinygrad/teenygrad
 from __future__ import annotations
+import math
 from typing import Tuple, Optional
 from dtype import Dtype
 import numpy as np
 from helpers import prod
+import function as F
 
 class Tensor:
   def __init__(self, data, device=None, dtype=None, requires_grad=None):
@@ -53,15 +55,39 @@ class Tensor:
       del t0._ctx
     return self
 
-  # data handling
+  # *** data handling ***
   def detach(self) -> Tensor: return Tensor(self.data, device=self.device, requires_grad=False)
   def numpy(self) -> np.ndarray: return self.detach().data
 
-  # convenience
+  # *** convenience ***
   def numel(self) -> int: return prod(self.shape)
   def element_size(self) -> int: return self.dtype.itemsize
   def nbytes(self) -> int: return self.numel() * self.element_size()
     
+  # *** unary ***
+  def neg(self): return F.Neg.apply(self)
+  def log(self): return F.Log.apply(self)
+  def log2(self): return self.log()/math.log(2)
+  def exp(self): return F.Exp.apply(self)
+  def exp2(self): return F.Exp.apply(self*math.log(2))
+  def relu(self): return F.Relu.apply(self)
+  def sigmoid(self): return F.Sigmoid.apply(self)
+  def sqrt(self): return F.Sqrt.apply(self)
+  def rsqrt(self): return (1/self).sqrt()
+  def sin(self): return F.Sin.apply(self)
+  def cos(self): return ((math.pi/2)-self).sin()
+  def tan(self): return self.sin() / self.cos()
+  def square(self): return self*self
+  def abs(self): return self.relu() + (-self).relu()
+
+  # activation functions
+  def swish(self): return self * self.sigmoid()
+  def tanh(self): return 2.0 * ((2.0 * self).sigmoid()) - 1.0
+  def sinh(self): return (self.exp() - self.neg().exp()) / 2
+  def cosh(self): return (self.exp() + self.neg().exp()) / 2
+  def gelu(self): return 0.5 * self * (1 + (self * 0.7978845608 * (1 + 0.044715 * self * self)).tanh())
+  def quick_gelu(self): return self * (self * 1.702).sigmoid()
+  def leakyrelu(self, neg_slope=0.01): return self.relu() - (-neg_slope*self).relu()
 
 """
 *** high level tensor ops ***
@@ -75,30 +101,6 @@ eye
 rand
 randn
 randint
-
-# unary function
-neg
-log
-log2
-exp
-exp2
-relu
-sigmoid
-sin
-sqrt
-rqsrt
-cos
-tan
-
-# unary math
-abs
-
-# unary activation
-swish
-tanh
-sinh
-gelu
-leakyrelu
 
 # binary
 add
