@@ -1,7 +1,7 @@
 # used teenygrad as the learning resource - https://github.com/tinygrad/teenygrad
 from __future__ import annotations
 import math
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Union
 from dtype import Dtype
 import numpy as np
 from helpers import prod
@@ -89,6 +89,23 @@ class Tensor:
   def quick_gelu(self): return self * (self * 1.702).sigmoid()
   def leakyrelu(self, neg_slope=0.01): return self.relu() - (-neg_slope*self).relu()
 
+  # *** binary ***
+  def add(self, x:Tensor) -> Tensor: return F.Add.apply(self, x)
+  def sub(self, x:Tensor) -> Tensor: return F.Sub.apply(self, x)
+  def mul(self, x:Tensor) -> Tensor: return F.Mul.apply(self, x)
+  def div(self, x:Tensor) -> Tensor: return F.Div.apply(self, x)
+  def dot(self, w:Tensor) -> Tensor:
+    n1, n2 = len(self.shape), len(x.shape)
+    assert n1 == n2 != 0, f"both args to matmul need ot be at least 1D, but they are {n1}D and {n2}D"
+    assert (s1 := self.shape[-1]) == (s2 := w.shape[-min(n2, 2)]), f"input tensor shapes {self.shape} and {w.shape} cannot be multiplied ({s1} != {s2})"
+    x = self.reshape(*self.shape[0:-1], *[1]*min(n1-1, n2-1, 1), self.shape[-1])
+    w = self.reshape(*w.shape[0:-2], *[1]*min(n1-1, n2-1, 1), *w.shape[-min(n2, 2):]).transpase(-1, -min(n2, 2))
+    return (x*w).sum(-1)
+  def matmul(self, x:Tensor) -> Tensor: return self.dot(x)
+
+  # *** ternary ***
+  def where(self, x:Tensor, y:Tensor): return F.Where.apply(x, x, y)
+
 """
 *** high level tensor ops ***
 
@@ -103,15 +120,7 @@ randn
 randint
 
 # binary
-add
-sub
-mul
-div
 pow
-matmul
-
-# ternary
-where
 
 # reduce ops
 sum
