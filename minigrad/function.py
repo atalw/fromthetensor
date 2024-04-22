@@ -3,6 +3,7 @@ from typing import Tuple, Optional
 from buffer import Buffer
 from tensor import Tensor
 from ops import UnaryOps, BinaryOps, TernaryOps, ReduceOps, MovementOps
+from helpers import argsort
 
 class Function:
   def __init__(self, device:str, *tensors:Tensor):
@@ -65,7 +66,6 @@ class Neg(Function):
   def forward(self, x:Buffer) -> Buffer: return x.e(UnaryOps.NEG)
   def backward(self, grad:Buffer) -> Buffer: return grad.e(UnaryOps.NEG)
 
-
 # *** binary ops ***
 
 class Add(Function):
@@ -108,11 +108,79 @@ class Where(Function):
     self.x = x
     return x.e(TernaryOps.WHERE, y, z)
 
-  def backward(self, grad:Buffer) -> Tuple[Optional[Buffer], Optional[Buffer]]:
+  def backward(self, grad:Buffer) -> Tuple[None, Optional[Buffer], Optional[Buffer]]:
     return None, \
            self.x.e(TernaryOps.WHERE, grad, grad.const(0)) if self.needs_input_grad[1] else None, \
            self.x.e(TernaryOps.WHERE, grad.const(0, grad)) if self.needs_input_grad[2] else None
 
+# *** reduce ops ***
+
+class Sum(Function):
+  def forward(self, x:Buffer, new_shape:Tuple[int, ...]) -> Buffer:
+    self.input_shape = x.shape
+    return x.r(ReduceOps.SUM, new_shape)
+
+  def backward(self, grad:Buffer) -> Buffer:
+    return grad.m(MovementOps.EXPAND, self.input_shape)
+
+class Max(Function):
+  def forward(self, x:Buffer, new_shape:Tuple[int, ...]) -> Buffer:
+    self.x, self.ret = x, x.r(ReduceOps.MAX, new_shape)
+    return self.ret
+
+  def backward(self, grad:Buffer) -> Buffer:
+    # TODO
+    return grad.m(MovementOps.EXPAND, self.input_shape)
+
+# *** movement ops ***
+
+class Expand(Function):
+  def forward(self, x:Buffer, shape:Tuple[int, ...]) -> Buffer:
+    self.input_shape = x.shape
+    return x.m(MovementOps.EXPAND, shape)
+
+  def backward(self, grad:Buffer) -> Buffer:
+    return grad.r(ReduceOps.SUM, self.input_shape)
+
+class Resahpe(Function):
+  def forward(self, x:Buffer, shape:Tuple[int, ...]) -> Buffer:
+    self.input_shape = x.shape
+    return x.m(MovementOps.RESHAPE, shape)
+
+  def backward(self, grad:Buffer) -> Buffer:
+    return grad.m(MovementOps.RESHAPE, self.input_shape)
+
+class Permute(Function):
+  def forward(self, x:Buffer, order:Tuple[int, ...]) -> Buffer:
+    self.input_order = order
+    return x.m(MovementOps.PERMUTE, order)
+
+  def backward(self, grad:Buffer) -> Buffer:
+    return grad.m(MovementOps.PERMUTE, argsort(self.input_order))
+
+class Pad(Function):
+  def forward(self, x:Buffer, arg:Tuple[Tuple[int, int], ...]) -> Buffer:
+    self.narg = tuple([(p[0], s+p[0]) for s,p in zip(x.shape, arg)])
+    return x.m(MovementOps.PAD, arg)
+
+  def backward(self, grad:Buffer) -> Buffer:
+    return grad.m(MovementOps.SHRINK, self.narg)
+
+class Shrink(Function):
+  def forward(self, x:Buffer, arg:Tuple[Tuple[int, int], ...]) -> Buffer:
+    self.narg = tuple([(p[0], s-p[1]) for s,p in zip(x.shape, arg)])
+    return x.m(MovementOps.SHRINK, arg)
+
+  def backward(self, grad:Buffer) -> Buffer:
+    return grad.m(MovementOps.PAD, self.narg)
+
+class Flip(Function):
+  def forward(self, x:Buffer, axis:Tuple[int, ...]) -> Buffer:
+    self.arg = tuple([-1 if i in set(axis) else 1 for i in range(len(x.shape))])
+    return x.m(MovementOps.STRIDE, self.arg)
+
+  def backward(self, grad:Buffer) -> Buffer:
+    return grad.m(MovementOps.STRIDE, self.arg)
 
 """
 forward and backward passes of low level ops
