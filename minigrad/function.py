@@ -5,6 +5,18 @@ from tensor import Tensor
 from ops import UnaryOps, BinaryOps, TernaryOps, ReduceOps, MovementOps
 from helpers import argsort
 
+"""
+forward and backward passes of low level ops
+
+unimplemented:
+  # unary ops
+  relu
+  sigmoid
+  # binary ops
+  less
+
+"""
+
 class Function:
   def __init__(self, device:str, *tensors:Tensor):
     self.device = device
@@ -181,41 +193,3 @@ class Flip(Function):
 
   def backward(self, grad:Buffer) -> Buffer:
     return grad.m(MovementOps.STRIDE, self.arg)
-
-"""
-forward and backward passes of low level ops
-
-# unary ops
-zero
-neg
-sin
-relu
-log
-exp
-sqrt
-sigmoid
-
-# binary ops
-less
-add
-sub
-mul
-div
-
-# ternary ops
-where
-
-# reduce ops
-sum
-max
-
-# movement ops
-expand
-reshape
-permute
-pad
-shrink
-flip
-
-
-"""
