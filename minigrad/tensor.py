@@ -103,8 +103,18 @@ class Tensor:
     return (x*w).sum(-1)
   def matmul(self, x:Tensor) -> Tensor: return self.dot(x)
 
+  # op wrappers
+  def __neg__(self) -> Tensor: return self.neg()
+  def __add__(self, x) -> Tensor: return self.add(x)
+  def __sub__(self, x) -> Tensor: return self.sub(x)
+  def __mul__(self, x) -> Tensor: return self.mul(x)
+  def __truediv__(self, x) -> Tensor: return self.div(x)
+  def __matmul__(self, x) -> Tensor: return self.matmul(x)
+
   # *** ternary ***
   def where(self, x:Tensor, y:Tensor): return F.Where.apply(x, x, y)
+
+  
 
 """
 *** high level tensor ops ***
