@@ -1,8 +1,8 @@
-import math
 from __future__ import annotations
+import math
 from typing import Tuple, Optional, Type
 from buffer import Buffer
-from tensor import Tensor
+import tensor
 from ops import UnaryOps, BinaryOps, TernaryOps, ReduceOps, MovementOps
 from helpers import argsort
 
@@ -19,7 +19,7 @@ unimplemented:
 """
 
 class Function:
-  def __init__(self, device:str, *tensors:Tensor):
+  def __init__(self, device:str, *tensors:tensor.Tensor):
     self.device = device
     self.needs_input_grad = [t.requires_grad for t in tensors]
     self.requires_grad = True if any(self.needs_input_grad) else None if None in self.needs_input_grad else False
@@ -29,10 +29,10 @@ class Function:
   def backward(self, *args, **kwargs): raise NotImplementedError(f"backward not implemented for {type(self)}")
 
   @classmethod
-  def apply(fxn:Type[Function], *x:Tensor, **kwargs) -> Tensor:
+  def apply(fxn:Type[Function], *x:tensor.Tensor, **kwargs) -> tensor.Tensor:
     ctx = fxn(x[0].device, *x)
-    ret = Tensor(ctx.forward(*[t.data for t in x]), device=ctx.device, requires_grad=ctx.requires_grad)
-    if ctx.requires_grad and not Tensor.no_grad: ret._ctx = ctx
+    ret = tensor.Tensor(ctx.forward(*[t.data for t in x], **kwargs), device=ctx.device, requires_grad=ctx.requires_grad)
+    if ctx.requires_grad and not tensor.Tensor.no_grad: ret._ctx = ctx
     return ret
 
 

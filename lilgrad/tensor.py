@@ -3,29 +3,50 @@ from __future__ import annotations
 import math
 from typing import Tuple, Optional, Union, Type, List
 from dtype import Dtype, dtypes
+from device import Device
 import numpy as np
 from helpers import prod, argfix
 import function as F
+from buffer import Buffer
+from ops import LoadOps
 
 class Tensor:
   def __init__(self, data, device=None, dtype=None, requires_grad=None):
-    if device is None: device = "CPU"
     assert dtype is None or isinstance(dtype, Dtype), f"invalid dtype {dtype}"
+    device = Device.canonicalize(device)
 
+    # tensors have gradients, buffers do not
     self.grad: Optional[Tensor] = None
+    # NOTE: this can be in three states. False and None: no gradient, True: gradient
+    self.requires_grad: Optional[bool] = requires_grad
+
+    self._ctx: Optional[F.Function] = None
+    if isinstance(data, Buffer): assert dtype is None or dtype == data.dtype, "dtype doesn't match"
+    elif isinstance(data, (int, float)):
+      data = Buffer(np.full(tuple(), data, dtype.np))
+    elif data is None or data.__class__ is list:
+      assert dtype is None or dtype.np is not None, f"{dtype} doesn't have a numpy dtype"
+      data = Buffer(np.array([] if data is None else data, (dtype.np or Tensor.default_type)))
+    elif isinstance(data, np.ndarray):
+      assert dtype is None or dtype.np is not None, f"{dtype} doesn't have a numpy dtype"
+      if data.shape == ():
+        data = Buffer(np.full(tuple(), data, dtypes.from_np(data.dtype)))
+      else:
+        data = Buffer(data)
+    self.data = data
 
   def __repr__(self):
     return f"<Tensor {self.data!r} on {self.device} with grad {(self.grad.data if self.grad else None)!r}"
 
   # *** properties ***
   @property
-  def device(self) -> str: return self.device
-
+  def device(self) -> str: return self.data.device
   @property
-  def shape(self) -> Tuple[int]: return self.shape
-
+  def shape(self) -> Tuple[int]: return self.data.shape
   @property
-  def dtype(self) -> Dtype: return self.dtype
+  def dtype(self) -> Dtype: return self.data.dtype
+  @property
+  def ndim(self) -> int: return len(self.shape)
 
   # *** backward pass ***
   # toposort
@@ -78,10 +99,10 @@ class Tensor:
   @staticmethod
   def eye(dim:int, **kwargs): return Tensor.full((dim,1),1,**kwargs).pad(((0,0),(0,dim))).reshape(dim*(dim+1)).shrink(((0,dim*dim),)).reshape(dim,dim)
 
-  def full_like(self, fill_value, **kwargs): return Tensor.ful(self.shape, fill_value=fill_value, dtype=kwargs.pop("dtype", self.dtype), device=kwargs.pop("device", self.device), **kwargs)
+  def full_like(self, fill_value, **kwargs): return Tensor.full(self.shape, fill_value=fill_value, dtype=kwargs.pop("dtype", self.dtype), device=kwargs.pop("device", self.device), **kwargs)
   def zeros_like(self, **kwargs): return self.full_like(0, **kwargs)
   def ones_like(self, **kwargs): return self.full_like(1, **kwargs)
-    
+
   # *** unary ***
   def neg(self): return F.Neg.apply(self)
   def log(self): return F.Log.apply(self)
@@ -188,6 +209,13 @@ class Tensor:
     if all(x is None or x == (0,0) for x in arg): return self
     ret = F.Pad.apply(self, arg=(narg:=tuple(x if x is not None else (0,0) for x in arg)))
     return ret if 0 == value else ret + Tensor.where(F.Pad.apply(Tensor.ones_like(self), arg=narg), 0, value)
+  def gather(self:Tensor, idx:Tensor, dim:int) -> Tensor:
+    assert idx.ndim == self.ndim, "self.ndim must equal idx.ndim"
+    assert all(ix <= s if i != dim else True for i,(ix,s) in enumerate(zip(idx.shape, self.shape))), "all dim (except input dim) of idx.shape must be smaller than self.shape"
+    if dim < 0: dim += self.ndim
+    permarg = list(range(self.ndim))
+    permarg = permarg[1:dim] + [permarg[0] + permarg[dim+1:] + [permarg[dim]] if dim != 0 else permarg[1:] + [permarg[0]]]
+    return ((idx == Tensor.arange(self.shape[dim], dtype=dtypes.int32, requires_grad=False, device=self.device)) * self.permute(*permarg).shrink(tuple([*[(0,s) for s in idx.shape[1:-1]], (0,self.shape[dim])])).unsqueeze(0)).sum(-1).transpose(0, dim)
 
   
 
@@ -206,8 +234,6 @@ pow
 avg_pool2d
 max_pool2d
 conv2d
-dot
-matmul
 cumsum
 triu
 tril
@@ -215,14 +241,7 @@ tril
 # movement ops
 __getitem__
 __setitem__
-reshape
-expand
-permute
-flip
-shrink
-pad
 slice
-gather
 cat
 stack
 repeat

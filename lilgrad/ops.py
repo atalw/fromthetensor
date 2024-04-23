@@ -36,3 +36,8 @@ class MovementOps(Enum):
   PAD = auto()
   SHRINK = auto()
   STRIDE = auto()
+
+class LoadOps(Enum):
+  RAND = auto()
+  CONST = auto()
+  EMPTY = auto()
