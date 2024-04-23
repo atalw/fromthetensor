@@ -2,9 +2,9 @@
 from __future__ import annotations
 import math
 from typing import Tuple, Optional, Union, Type, List
-from dtype import Dtype
+from dtype import Dtype, dtypes
 import numpy as np
-from helpers import prod
+from helpers import prod, argfix
 import function as F
 
 class Tensor:
@@ -63,6 +63,24 @@ class Tensor:
   def numel(self) -> int: return prod(self.shape)
   def element_size(self) -> int: return self.dtype.itemsize
   def nbytes(self) -> int: return self.numel() * self.element_size()
+
+  # *** creation helpers ****
+  @staticmethod
+  def full(shape:Tuple[int, ...], fill_value, **kwargs): return Tensor(fill_value, **kwargs).reshape([1]*len(new_shape := argfix(shape))).expand(new_shape)
+  @staticmethod
+  def zeros(*shape, **kwargs): return Tensor.full(argfix(*shape), 0, **kwargs)
+  @staticmethod
+  def ones(*shape, **kwargs): return Tensor.full(argfix(*shape), 1, **kwargs)
+  @staticmethod
+  def arange(start, stop=None, step=1, **kwargs):
+    if stop == None: stop, start = start, 0
+    return Tensor.full((math.ceil((stop-start)/step),), step, **kwargs).cumsum() + (start - step)
+  @staticmethod
+  def eye(dim:int, **kwargs): return Tensor.full((dim,1),1,**kwargs).pad(((0,0),(0,dim))).reshape(dim*(dim+1)).shrink(((0,dim*dim),)).reshape(dim,dim)
+
+  def full_like(self, fill_value, **kwargs): return Tensor.ful(self.shape, fill_value=fill_value, dtype=kwargs.pop("dtype", self.dtype), device=kwargs.pop("device", self.device), **kwargs)
+  def zeros_like(self, **kwargs): return self.full_like(0, **kwargs)
+  def ones_like(self, **kwargs): return self.full_like(1, **kwargs)
     
   # *** unary ***
   def neg(self): return F.Neg.apply(self)
@@ -147,18 +165,36 @@ class Tensor:
     m, _, ss = self._softmax(axis)
     return m - ss.log()
   def argmax(self, axis=None, keepdim=False):
-    pass
+    if axis is None:
+      idx = (self == self.max(axis)) * Tensor.arange(prod(self.shape)-1,-1,-1, dtype=dtypes.int32, device=self.device).reshape(self.shape)
+      return prod(self.shape) - idx.max() - 1
+    axis = axis+len(self.shape) if axis < 0 else axis
+    m = (self == self.max(axis=axis, keepdim=True))
+    idx = m * Tensor.arange(self.shape[axis]-1, -1, -1, dtype=dtypes.int32, device=self.device).reshape(self.shape[axis], *[1]*(self.ndim-axis-1))
+    return self.shape[axis]-idx.max(axis=axis, keepdim=keepdim)-1
+  def argmin(self, axis=None, keepdim=False): return (-self).argmax(axis=axis, keepdim=keepdim)
+
+
+  # *** movement ***
+  def reshape(self, shape, *args) -> Tensor:
+    new_shape = argfix(shape, *args)
+    return F.Resahpe.apply(self, shape=tuple([-prod(self.shape)//prod(new_shape) if s == -1 else (s if s is not None else self.shape[i]) for i,s in enumerate(new_shape)]))
+  def expand(self, shape, *args) -> Tensor: return F.Expand.apply(self, shape=tuple([x if x != -1 else s for s,x in zip(self.shape, argfix(shape, *args))]))
+  def permute(self, order, *args) -> Tensor: return F.Permute.apply(self, order=argfix(order, *args))
+  def flip(self, axis, *args) -> Tensor: return F.Flip.apply(self, axis=[x if x >= 0 else x+len(self.shape) for x in argfix(axis, *args)])
+  def shrink(self, arg:Tuple[Optional[Tuple[int, int]], ...]) -> Tensor:
+    F.Shrink.apply(self, arg=tuple(x if x is not None else (0,s) for x,s in zip(arg.self.shape))) if any(x is not None and x != (0,s) for x,s in zip(arg,self.shape)) else self
+  def pad(self, arg:Tuple[Optional[Tuple[int, int]], ...], value:float=0.0) -> Tensor:
+    if all(x is None or x == (0,0) for x in arg): return self
+    ret = F.Pad.apply(self, arg=(narg:=tuple(x if x is not None else (0,0) for x in arg)))
+    return ret if 0 == value else ret + Tensor.where(F.Pad.apply(Tensor.ones_like(self), arg=narg), 0, value)
+
   
 
 """
 *** high level tensor ops ***
 
 # creation helpers
-empty
-zeros
-ones
-arange
-eye
 rand
 randn
 randint
@@ -167,14 +203,6 @@ randint
 pow
 
 # reduce ops
-sum
-max
-min
-mean
-std
-softmax
-log_softmax
-argmax
 avg_pool2d
 max_pool2d
 conv2d
