@@ -1,7 +1,7 @@
 # used teenygrad as the learning resource - https://github.com/tinygrad/teenygrad
 from __future__ import annotations
 import math
-from typing import Tuple, Optional, Union
+from typing import Tuple, Optional, Union, Type, List
 from dtype import Dtype
 import numpy as np
 from helpers import prod
@@ -114,6 +114,40 @@ class Tensor:
   # *** ternary ***
   def where(self, x:Tensor, y:Tensor): return F.Where.apply(x, x, y)
 
+  # *** reduce ***
+  def _reduce(self, fxn:Type[F.Function], axis:Optional[Union[int, Tuple[int, ...]]]=None, keepdim=False) -> Tensor:
+    axis_: List[int] = list(range(len(self.shape))) if axis is None else ([axis] if isinstance(axis, int) else list(axis))
+    axis_ = [x if x>=0 else x+len(self.shape) for x in axis_]
+    shape = tuple(s for i,s in enumerate(self.shape) if i not in axis_)
+    if 0 in self.shape and 0 not in shape:
+      v = {F.Sum: 0, F.Max: -float("inf")}[fxn]
+      return Tensor.full(tuple(1 if s == 0 else s for s in self.shape) if keepdim else shape, v)
+    ret = fxn.apply(self, new_shape=tuple([1 if i in axis_ else s for i,s in enumerate(self.shape)]))
+    return ret if keepdim else ret.reshape(shape=shape)
+  
+  def sum(self, axis=None, keepdim=False): return self._reduce(F.Sum, axis, keepdim)
+  def max(self, axis=None, keepdim=False): return self._reduce(F.Max, axis, keepdim)
+  def min(self, axis=None, keepdim=False): return -((-self)._reduce(F.Max, axis, keepdim))
+  def mean(self, axis=None, keepdim=False):
+    out = self.sum(axis=axis, keepdim=keepdim)
+    # return out.mul(prod(out.shape)/prod(self.shape)) if 0 not in self.shape else out
+    return out.div(prod(self.shape)/prod(out.shape)) if 0 not in self.shape else out
+  def std(self, axis=None, keepdim=False, correction=1):
+    square_sum = ((self - self.mean(axis=axis, keepdim=True)).square()).sum(axis=axis, keepdim=keepdim)
+    return square_sum.div(prod(self.shape)/prod(square_sum.shape)-correction).sqrt()
+  # https://en.wikipedia.org/wiki/Softmax_function
+  def _softmax(self, axis):
+    m = self - self.max(axis=axis, keepdim=True)
+    e = m.exp()
+    return m, e, e.sum(axis=axis, keepdim=True)
+  def softmax(self, axis=-1):
+    _, e, ss = self._softmax(axis)
+    return e.div(ss)
+  def log_softmax(self, axis=-1):
+    m, _, ss = self._softmax(axis)
+    return m - ss.log()
+  def argmax(self, axis=None, keepdim=False):
+    pass
   
 
 """
