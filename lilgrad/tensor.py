@@ -9,6 +9,8 @@ from helpers import prod, argfix
 import function as F
 from buffer import Buffer
 from ops import LoadOps
+from itertools import accumulate
+from functools import reduce
 
 class Tensor:
   def __init__(self, data, device=None, dtype=None, requires_grad=None):
@@ -197,18 +199,26 @@ class Tensor:
 
 
   # *** movement ***
+  def _resolve_dim(self, dim:int, *, outer:bool=False) -> int:
+    if not -max(1, self.ndim+outer) <= dim < max(1, self.ndim+outer):
+      raise IndexError(f"{dim=} out of range {[-max(1, self.ndim+outer), max(1, self.ndim+outer)-1]}")
+    return dim + self.ndim+outer if dim < 0 else dim
+
   def reshape(self, shape, *args) -> Tensor:
     new_shape = argfix(shape, *args)
     return F.Resahpe.apply(self, shape=tuple([-prod(self.shape)//prod(new_shape) if s == -1 else (s if s is not None else self.shape[i]) for i,s in enumerate(new_shape)]))
   def expand(self, shape, *args) -> Tensor: return F.Expand.apply(self, shape=tuple([x if x != -1 else s for s,x in zip(self.shape, argfix(shape, *args))]))
   def permute(self, order, *args) -> Tensor: return F.Permute.apply(self, order=argfix(order, *args))
   def flip(self, axis, *args) -> Tensor: return F.Flip.apply(self, axis=[x if x >= 0 else x+len(self.shape) for x in argfix(axis, *args)])
+  
   def shrink(self, arg:Tuple[Optional[Tuple[int, int]], ...]) -> Tensor:
     F.Shrink.apply(self, arg=tuple(x if x is not None else (0,s) for x,s in zip(arg.self.shape))) if any(x is not None and x != (0,s) for x,s in zip(arg,self.shape)) else self
+  
   def pad(self, arg:Tuple[Optional[Tuple[int, int]], ...], value:float=0.0) -> Tensor:
     if all(x is None or x == (0,0) for x in arg): return self
     ret = F.Pad.apply(self, arg=(narg:=tuple(x if x is not None else (0,0) for x in arg)))
     return ret if 0 == value else ret + Tensor.where(F.Pad.apply(Tensor.ones_like(self), arg=narg), 0, value)
+  
   def gather(self:Tensor, idx:Tensor, dim:int) -> Tensor:
     assert idx.ndim == self.ndim, "self.ndim must equal idx.ndim"
     assert all(ix <= s if i != dim else True for i,(ix,s) in enumerate(zip(idx.shape, self.shape))), "all dim (except input dim) of idx.shape must be smaller than self.shape"
@@ -216,6 +226,28 @@ class Tensor:
     permarg = list(range(self.ndim))
     permarg = permarg[1:dim] + [permarg[0] + permarg[dim+1:] + [permarg[dim]] if dim != 0 else permarg[1:] + [permarg[0]]]
     return ((idx == Tensor.arange(self.shape[dim], dtype=dtypes.int32, requires_grad=False, device=self.device)) * self.permute(*permarg).shrink(tuple([*[(0,s) for s in idx.shape[1:-1]], (0,self.shape[dim])])).unsqueeze(0)).sum(-1).transpose(0, dim)
+  
+  def cat(self, *args:Tensor, dim:int=0) -> Tensor:
+    dim = (dim + len(self.shape)) if dim < 0 else dim
+    assert all(len(y.shape) == len(self.shape) and all(y.shap[i] == s for i,s in enumerate(self.shape) if i != dim) for y in args)
+    catargs = [self, *args]
+    cat_dims = [s.shape[dim] for s in catargs]
+    cat_dim_cumsum = [0, *accumulate(cat_dims)]
+    slc = [[None for _ in self.shape] for _ in catargs]
+    for d,k,s in zip(cat_dims, cat_dim_cumsum[:-1], slc):
+      s[dim] = (k, cat_dim_cumsum[-1]-k-d)
+    return reduce(Tensor.__add__, [arg.pad(tuple(s)) for arg,s in zip(catargs, slc)])
+  
+  def squeeze(self, dim:Optional[int]=None) -> Tensor:
+    if dim is None: return self.reshape(tuple(dim for dim in self.shape if dim != 1))
+    dim = self._resolve_dim(dim)
+    return self if not self.ndim or self.shape[dim] != 1 else self.reshape(self.shape[:dim] + self.shape[dim+1])
+  
+  def unsqueeze(self, dim:int) -> Tensor:
+    dim = self._resolve_dim(dim, outer=True)
+    return self.reshape(self.shape[:dim] + (1,) + self.shape[dim:])
+
+
 
   
 
@@ -242,12 +274,9 @@ tril
 __getitem__
 __setitem__
 slice
-cat
 stack
 repeat
 chunk
-squeeze
-unsqueeze
 
 # functional
 linear
