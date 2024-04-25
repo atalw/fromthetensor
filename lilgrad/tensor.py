@@ -94,58 +94,58 @@ class Tensor:
 
   # *** creation helpers ****
   @staticmethod
-  def _loadop(op, sz, device:Optional[str]=None, dtype:Optional[Dtype]=None, arg=None, **kwargs):
+  def _loadop(op, sz, device:Optional[str]=None, dtype:Optional[Dtype]=None, arg=None, **kwargs) -> Tensor:
     assert isinstance(sz, int), f"cannot create with symbolic size {sz}"
     return Tensor(Buffer.loadop(op, (sz,), Tensor.default_type if dtype is None else dtype, Device.canonicalize(device), arg), dtype=dtype, device=device, **kwargs)
 
   @staticmethod
-  def empty(*shape, **kwargs): return Tensor._loadop(LoadOps.EMPTY, prod((shape:=argfix(*shape))), **kwargs).reshape(shape)
+  def empty(*shape, **kwargs) -> Tensor: return Tensor._loadop(LoadOps.EMPTY, prod((shape:=argfix(*shape))), **kwargs).reshape(shape)
 
   @staticmethod
-  def full(shape:Tuple[int, ...], fill_value, **kwargs): return Tensor(fill_value, **kwargs).reshape([1]*len(new_shape := argfix(shape))).expand(new_shape)
+  def full(shape:Tuple[int, ...], fill_value, **kwargs) -> Tensor: return Tensor(fill_value, **kwargs).reshape([1]*len(new_shape := argfix(shape))).expand(new_shape)
 
   @staticmethod
-  def zeros(*shape, **kwargs): return Tensor.full(argfix(*shape), 0, **kwargs)
+  def zeros(*shape, **kwargs) -> Tensor: return Tensor.full(argfix(*shape), 0, **kwargs)
 
   @staticmethod
-  def ones(*shape, **kwargs): return Tensor.full(argfix(*shape), 1, **kwargs)
+  def ones(*shape, **kwargs) -> Tensor: return Tensor.full(argfix(*shape), 1, **kwargs)
 
   @staticmethod
-  def arange(start, stop=None, step=1, **kwargs):
+  def arange(start, stop=None, step=1, **kwargs) -> Tensor:
     if stop == None: stop, start = start, 0
     return Tensor.full((math.ceil((stop-start)/step),), step, **kwargs).cumsum() + (start - step)
 
   @staticmethod
-  def eye(dim:int, **kwargs): return Tensor.full((dim,1),1,**kwargs).pad(((0,0),(0,dim))).reshape(dim*(dim+1)).shrink(((0,dim*dim),)).reshape(dim,dim)
+  def eye(dim:int, **kwargs) -> Tensor: return Tensor.full((dim,1),1,**kwargs).pad(((0,0),(0,dim))).reshape(dim*(dim+1)).shrink(((0,dim*dim),)).reshape(dim,dim)
 
   @staticmethod
-  def rand(*shape, **kwargs):
+  def rand(*shape, **kwargs) -> Tensor:
     Tensor._seed += 1
     return Tensor._loadop(LoadOps.RAND, prod((shape:=argfix(*shape))), arg=Tensor._seed, **kwargs).reshape(shape)  @staticmethod
 
   @staticmethod
-  def randn(*shape, dtype:Optional[Dtype]=None, **kwargs):
+  def randn(*shape, dtype:Optional[Dtype]=None, **kwargs) -> Tensor:
     # https://en.wikipedia.org/wiki/Box%E2%80%93Muller_transform
     src = Tensor.rand((2, *argfix(*shape)), **{**kwargs, "dtype": dtypes.float32})
     return src[0].mul(2*math.pi).cos().mul((1 - src[1]).log().mul(-2).sqrt()).cast(dtype or dtypes.default_float)
 
   @staticmethod
-  def randint(*shape, low=0, high=10, **kwargs): return Tensor.uniform(*shape, low=low, high=high, dtype=dtypes.int32, **kwargs)
+  def randint(*shape, low=0, high=10, **kwargs) -> Tensor: return Tensor.uniform(*shape, low=low, high=high, dtype=dtypes.int32, **kwargs)
 
   @staticmethod
-  def normal(*shape, mean=0.0, std=1.0, **kwargs): return (std * Tensor.randn(*shape, **kwargs)) + mean
+  def normal(*shape, mean=0.0, std=1.0, **kwargs) -> Tensor: return (std * Tensor.randn(*shape, **kwargs)) + mean
 
   @staticmethod
-  def uniform(*shape, low=0.0, high=1.0, **kwargs): return ((high-low) * Tensor.rand(*shape, **kwargs)) + low
+  def uniform(*shape, low=0.0, high=1.0, **kwargs) -> Tensor: return ((high-low) * Tensor.rand(*shape, **kwargs)) + low
 
   @staticmethod
-  def kaiming_uniform(*shape, a:float=0.01, **kwargs):
+  def kaiming_uniform(*shape, a:float=0.01, **kwargs) -> Tensor:
     std = math.sqrt(2.0 / (1 + a ** 2)) / math.sqrt(prod(argfix(*shape)[1:]))
     return Tensor.normal(*shape, mean=0.0, std=std, **kwargs)
 
-  def full_like(self, fill_value, **kwargs): return Tensor.full(self.shape, fill_value=fill_value, dtype=kwargs.pop("dtype", self.dtype), device=kwargs.pop("device", self.device), **kwargs)
-  def zeros_like(self, **kwargs): return self.full_like(0, **kwargs)
-  def ones_like(self, **kwargs): return self.full_like(1, **kwargs)
+  def full_like(self, fill_value, **kwargs) -> Tensor: return Tensor.full(self.shape, fill_value=fill_value, dtype=kwargs.pop("dtype", self.dtype), device=kwargs.pop("device", self.device), **kwargs)
+  def zeros_like(self, **kwargs) -> Tensor: return self.full_like(0, **kwargs)
+  def ones_like(self, **kwargs) -> Tensor: return self.full_like(1, **kwargs)
 
   # *** unary ***
   def neg(self): return F.Neg.apply(self)
@@ -211,14 +211,14 @@ class Tensor:
     ret = fxn.apply(self, new_shape=tuple([1 if i in axis_ else s for i,s in enumerate(self.shape)]))
     return ret if keepdim else ret.reshape(shape=shape)
   
-  def sum(self, axis=None, keepdim=False): return self._reduce(F.Sum, axis, keepdim)
-  def max(self, axis=None, keepdim=False): return self._reduce(F.Max, axis, keepdim)
-  def min(self, axis=None, keepdim=False): return -((-self)._reduce(F.Max, axis, keepdim))
-  def mean(self, axis=None, keepdim=False):
+  def sum(self, axis=None, keepdim=False) -> Tensor: return self._reduce(F.Sum, axis, keepdim)
+  def max(self, axis=None, keepdim=False) -> Tensor: return self._reduce(F.Max, axis, keepdim)
+  def min(self, axis=None, keepdim=False) -> Tensor: return -((-self)._reduce(F.Max, axis, keepdim))
+  def mean(self, axis=None, keepdim=False) -> Tensor:
     out = self.sum(axis=axis, keepdim=keepdim)
     # return out.mul(prod(out.shape)/prod(self.shape)) if 0 not in self.shape else out
     return out.div(prod(self.shape)/prod(out.shape)) if 0 not in self.shape else out
-  def std(self, axis=None, keepdim=False, correction=1):
+  def std(self, axis=None, keepdim=False, correction=1) -> Tensor:
     square_sum = ((self - self.mean(axis=axis, keepdim=True)).square()).sum(axis=axis, keepdim=keepdim)
     return square_sum.div(prod(self.shape)/prod(square_sum.shape)-correction).sqrt()
   # https://en.wikipedia.org/wiki/Softmax_function
@@ -226,13 +226,13 @@ class Tensor:
     m = self - self.max(axis=axis, keepdim=True)
     e = m.exp()
     return m, e, e.sum(axis=axis, keepdim=True)
-  def softmax(self, axis=-1):
+  def softmax(self, axis=-1) -> Tensor:
     _, e, ss = self._softmax(axis)
     return e.div(ss)
-  def log_softmax(self, axis=-1):
+  def log_softmax(self, axis=-1) -> Tensor:
     m, _, ss = self._softmax(axis)
     return m - ss.log()
-  def argmax(self, axis=None, keepdim=False):
+  def argmax(self, axis=None, keepdim=False) -> Tensor:
     if axis is None:
       idx = (self == self.max(axis)) * Tensor.arange(prod(self.shape)-1,-1,-1, dtype=dtypes.int32, device=self.device).reshape(self.shape)
       return prod(self.shape) - idx.max() - 1
@@ -240,7 +240,7 @@ class Tensor:
     m = (self == self.max(axis=axis, keepdim=True))
     idx = m * Tensor.arange(self.shape[axis]-1, -1, -1, dtype=dtypes.int32, device=self.device).reshape(self.shape[axis], *[1]*(self.ndim-axis-1))
     return self.shape[axis]-idx.max(axis=axis, keepdim=keepdim)-1
-  def argmin(self, axis=None, keepdim=False): return (-self).argmax(axis=axis, keepdim=keepdim)
+  def argmin(self, axis=None, keepdim=False) -> Tensor: return (-self).argmax(axis=axis, keepdim=keepdim)
 
 
   # *** movement ***
@@ -309,6 +309,10 @@ class Tensor:
     order = list(range(self.ndim))
     order[ax1], order[ax2] = order[ax2], order[ax1]
     return self.permute(order)
+  
+  def flatten(self, start_dim=0, end_dim=-1):
+    start_dim, end_dim = self._resolve_dim(start_dim), self._resolve_dim(end_dim)
+    return self.reshape(self.shape[:start_dim] + (prod(self.shape[start_dim:end_dim+1]), ) + self.shape[end_dim+1:])
 
   # *** functional ****
 
@@ -336,6 +340,15 @@ class Tensor:
 
   def binary_crossentropy_logits(self, y:Tensor) -> Tensor:
     return (self.maximum(0) - (y*self) + (1+self.abs().neg().exp()).log()).mean()
+  
+  def sparse_categorical_crossentropy(self, Y:Tensor, ignore_index=-1, label_smoothing=0.0) -> Tensor:
+    assert 0.0 <= label_smoothing <= 1.0, "label_smoothing must be in [0.0, 1.0]"
+    # NOTE: self is a logits input
+    log_probs, loss_mask = self.log_softmax(), (Y != ignore_index)
+    y_counter = Tensor.arange(self.shape[-1], requires_grad=False, device=self.device).unsqueeze(0).expand(Y.numel(), self.shape[-1])
+    y = ((y_counter == Y.flatten().reshape(-1, 1)).where(-1, 0) * loss_mask.reshape(-1, 1)).reshape(*Y.shape, self.shape[-1])
+    smoothing = -1 * label_smoothing * (log_probs.mean(-1) * loss_mask).sum() / loss_mask.sum()
+    return (1 - label_smoothing) * (log_probs * y).sum() / loss_mask.sum() + smoothing
 
   def _pool(self, kernel:Tuple[int, ...], stride:Union[Tuple[int, ...], int]=1):
     assert len(self.shape) >= len(kernel), f"can't pool {self.shape} with {kernel}"
