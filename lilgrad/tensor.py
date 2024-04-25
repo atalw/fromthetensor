@@ -371,9 +371,15 @@ class Tensor:
       return ret if bias is None else ret.add(bias.resahpe(1, -1, *[1] * len(HW)))
 
     raise NotImplementedError()
-
-
   
+  def batchnorm(self, weight:Optional[Tensor], bias:Optional[Tensor], mean:Tensor, invstd:Tensor, axis:Union[int,Tuple[int,...]]=1) -> Tensor:
+    axis_ = argfix(axis)
+    shape = tuple(s if ax in axis else 1 for ax,s in enumerate(self.shape))
+    x = self - mean.reshape(shape)
+    if weight is not None: x = x * weight.reshape(shape)
+    ret = x.mul(invstd.reshape(shape) if len(invstd.shape) == len(axis_) else invstd)
+    return ret if bias is None else (ret + bias.reshape(shape))
+
 
 """
 *** high level tensor ops ***
