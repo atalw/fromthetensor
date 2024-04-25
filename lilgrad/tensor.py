@@ -1,6 +1,6 @@
 # used teenygrad as the learning resource - https://github.com/tinygrad/teenygrad
 from __future__ import annotations
-import math
+import time, math
 from typing import Tuple, Optional, Union, Type, List
 from dtype import Dtype, dtypes
 from device import Device
@@ -36,6 +36,7 @@ class Tensor:
       else:
         data = Buffer(data)
     self.data = data
+    _seed: int = int(time.time())
 
   def __repr__(self):
     return f"<Tensor {self.data!r} on {self.device} with grad {(self.grad.data if self.grad else None)!r}"
@@ -79,6 +80,9 @@ class Tensor:
     return self
 
   # *** data handling ***
+  def assign(self, x) -> Tensor:
+    self.data = x.data
+    return self
   def detach(self) -> Tensor: return Tensor(self.data, device=self.device, requires_grad=False)
   def numpy(self) -> np.ndarray: return self.detach().data
 
@@ -88,6 +92,13 @@ class Tensor:
   def nbytes(self) -> int: return self.numel() * self.element_size()
 
   # *** creation helpers ****
+  @staticmethod
+  def _loadop(op, sz, device:Optional[str]=None, dtype:Optional[Dtype]=None, arg=None, **kwargs):
+    assert isinstance(sz, int), f"cannot create with symbolic size {sz}"
+    return Tensor(Buffer.loadop(op, (sz,), Tensor.default_type if dtype is None else dtype, Device.canonicalize(device), arg), dtype=dtype, device=device, **kwargs)
+  @staticmethod
+  def empty(*shape, **kwargs):
+    return Tensor._loadop(LoadOps.EMPTY, prod((shape:=argfix(*shape))), **kwargs).reshape(shape)
   @staticmethod
   def full(shape:Tuple[int, ...], fill_value, **kwargs): return Tensor(fill_value, **kwargs).reshape([1]*len(new_shape := argfix(shape))).expand(new_shape)
   @staticmethod
@@ -100,6 +111,10 @@ class Tensor:
     return Tensor.full((math.ceil((stop-start)/step),), step, **kwargs).cumsum() + (start - step)
   @staticmethod
   def eye(dim:int, **kwargs): return Tensor.full((dim,1),1,**kwargs).pad(((0,0),(0,dim))).reshape(dim*(dim+1)).shrink(((0,dim*dim),)).reshape(dim,dim)
+  @staticmethod
+  def rand(*shape, **kwargs):
+    Tensor._seed += 1
+    return Tensor._loadop(LoadOps.RAND, prod((shape:=argfix(*shape))), arg=Tensor._seed, **kwargs).reshape(shape)  @staticmethod
 
   def full_like(self, fill_value, **kwargs): return Tensor.full(self.shape, fill_value=fill_value, dtype=kwargs.pop("dtype", self.dtype), device=kwargs.pop("device", self.device), **kwargs)
   def zeros_like(self, **kwargs): return self.full_like(0, **kwargs)
@@ -146,7 +161,6 @@ class Tensor:
   def maximum(self, x:Union[Tensor, float]) -> Tensor:
     return Tensor.where(self < x, x, (self == x).where((self*0.5 + x*0.5), self))
   def minimum(self, x:Union[Tensor, float]) -> Tensor: return -((-self).maximum(-x))
-
 
   # op wrappers
   def __neg__(self) -> Tensor: return self.neg()
@@ -211,8 +225,11 @@ class Tensor:
   def reshape(self, shape, *args) -> Tensor:
     new_shape = argfix(shape, *args)
     return F.Resahpe.apply(self, shape=tuple([-prod(self.shape)//prod(new_shape) if s == -1 else (s if s is not None else self.shape[i]) for i,s in enumerate(new_shape)]))
+
   def expand(self, shape, *args) -> Tensor: return F.Expand.apply(self, shape=tuple([x if x != -1 else s for s,x in zip(self.shape, argfix(shape, *args))]))
+
   def permute(self, order, *args) -> Tensor: return F.Permute.apply(self, order=argfix(order, *args))
+
   def flip(self, axis, *args) -> Tensor: return F.Flip.apply(self, axis=[x if x >= 0 else x+len(self.shape) for x in argfix(axis, *args)])
   
   def shrink(self, arg:Tuple[Optional[Tuple[int, int]], ...]) -> Tensor:
