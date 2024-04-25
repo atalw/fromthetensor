@@ -36,7 +36,6 @@ class SGD(Optimizer):
 """
 nn optimizers
 
-SGD
 Adam
 
 """

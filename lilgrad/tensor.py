@@ -50,6 +50,8 @@ class Tensor:
   def dtype(self) -> Dtype: return self.data.dtype
   @property
   def ndim(self) -> int: return len(self.shape)
+  @property
+  def T(self) -> Tensor: return self.transpose()
 
   # *** backward pass ***
   # toposort
@@ -96,25 +98,51 @@ class Tensor:
   def _loadop(op, sz, device:Optional[str]=None, dtype:Optional[Dtype]=None, arg=None, **kwargs):
     assert isinstance(sz, int), f"cannot create with symbolic size {sz}"
     return Tensor(Buffer.loadop(op, (sz,), Tensor.default_type if dtype is None else dtype, Device.canonicalize(device), arg), dtype=dtype, device=device, **kwargs)
+
   @staticmethod
-  def empty(*shape, **kwargs):
-    return Tensor._loadop(LoadOps.EMPTY, prod((shape:=argfix(*shape))), **kwargs).reshape(shape)
+  def empty(*shape, **kwargs): return Tensor._loadop(LoadOps.EMPTY, prod((shape:=argfix(*shape))), **kwargs).reshape(shape)
+
   @staticmethod
   def full(shape:Tuple[int, ...], fill_value, **kwargs): return Tensor(fill_value, **kwargs).reshape([1]*len(new_shape := argfix(shape))).expand(new_shape)
+
   @staticmethod
   def zeros(*shape, **kwargs): return Tensor.full(argfix(*shape), 0, **kwargs)
+
   @staticmethod
   def ones(*shape, **kwargs): return Tensor.full(argfix(*shape), 1, **kwargs)
+
   @staticmethod
   def arange(start, stop=None, step=1, **kwargs):
     if stop == None: stop, start = start, 0
     return Tensor.full((math.ceil((stop-start)/step),), step, **kwargs).cumsum() + (start - step)
+
   @staticmethod
   def eye(dim:int, **kwargs): return Tensor.full((dim,1),1,**kwargs).pad(((0,0),(0,dim))).reshape(dim*(dim+1)).shrink(((0,dim*dim),)).reshape(dim,dim)
+
   @staticmethod
   def rand(*shape, **kwargs):
     Tensor._seed += 1
     return Tensor._loadop(LoadOps.RAND, prod((shape:=argfix(*shape))), arg=Tensor._seed, **kwargs).reshape(shape)  @staticmethod
+
+  @staticmethod
+  def randn(*shape, dtype:Optional[Dtype]=None, **kwargs):
+    # https://en.wikipedia.org/wiki/Box%E2%80%93Muller_transform
+    src = Tensor.rand((2, *argfix(*shape)), **{**kwargs, "dtype": dtypes.float32})
+    return src[0].mul(2*math.pi).cos().mul((1 - src[1]).log().mul(-2).sqrt()).cast(dtype or dtypes.default_float)
+
+  @staticmethod
+  def randint(*shape, low=0, high=10, **kwargs): return Tensor.uniform(*shape, low=low, high=high, dtype=dtypes.int32, **kwargs)
+
+  @staticmethod
+  def normal(*shape, mean=0.0, std=1.0, **kwargs): return (std * Tensor.randn(*shape, **kwargs)) + mean
+
+  @staticmethod
+  def uniform(*shape, low=0.0, high=1.0, **kwargs): return ((high-low) * Tensor.rand(*shape, **kwargs)) + low
+
+  @staticmethod
+  def kaiming_uniform(*shape, a:float=0.01, **kwargs):
+    std = math.sqrt(2.0 / (1 + a ** 2)) / math.sqrt(prod(argfix(*shape)[1:]))
+    return Tensor.normal(*shape, mean=0.0, std=std, **kwargs)
 
   def full_like(self, fill_value, **kwargs): return Tensor.full(self.shape, fill_value=fill_value, dtype=kwargs.pop("dtype", self.dtype), device=kwargs.pop("device", self.device), **kwargs)
   def zeros_like(self, **kwargs): return self.full_like(0, **kwargs)
@@ -267,6 +295,11 @@ class Tensor:
   def unsqueeze(self, dim:int) -> Tensor:
     dim = self._resolve_dim(dim, outer=True)
     return self.reshape(self.shape[:dim] + (1,) + self.shape[dim:])
+
+  def trnaspose(self, ax1=1, ax2=0) -> Tensor:
+    order = list(range(self.ndim))
+    order[ax1], order[ax2] = order[ax2], order[ax1]
+    return self.permute(order)
 
   # *** functional ****
 
