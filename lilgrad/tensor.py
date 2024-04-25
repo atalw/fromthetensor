@@ -143,6 +143,10 @@ class Tensor:
     w = self.reshape(*w.shape[0:-2], *[1]*min(n1-1, n2-1, 1), *w.shape[-min(n2, 2):]).transpase(-1, -min(n2, 2))
     return (x*w).sum(-1)
   def matmul(self, x:Tensor) -> Tensor: return self.dot(x)
+  def maximum(self, x:Union[Tensor, float]) -> Tensor:
+    return Tensor.where(self < x, x, (self == x).where((self*0.5 + x*0.5), self))
+  def minimum(self, x:Union[Tensor, float]) -> Tensor: return -((-self).maximum(-x))
+
 
   # op wrappers
   def __neg__(self) -> Tensor: return self.neg()
@@ -247,6 +251,32 @@ class Tensor:
     dim = self._resolve_dim(dim, outer=True)
     return self.reshape(self.shape[:dim] + (1,) + self.shape[dim:])
 
+  # *** functional ****
+
+  def linear(self, weight:Tensor, bias:Optional[Tensor]=None):
+    x = self.mul(weight) if len(weight.shape) == 1 else self.dot(weight)
+    return x.add(bias) if bias is not None else x
+
+  # https://arxiv.org/pdf/1607.06450.pdf
+  def layernorm(self, axis=-1, eps:float=1e-5) -> Tensor:
+    y = (self - self.mean(axis, keepdim=True))
+    return y.mul((y*y).mean(axis, keepdim=True).add(eps).rqsrt())
+    # where is g? what is eps?
+
+  # https://www.cs.toronto.edu/~rsalakhu/papers/srivastava14a.pdf
+  def dropout(self, p:float=0.5) -> Tensor:
+    if not Tensor.training or p == 0: return self
+    # scaling - https://cs231n.github.io/neural-networks-2/
+    return self * (Tensor.rand(*self.shape, requires_grad=False, device=self.device) >= p) * (1/(1.0 - p))
+
+  def one_hot(self, num_classes:int) -> Tensor:
+    return Tensor.where(self[..., None] == Tensor.arange(num_classes, requires_grad=False, device=self.device), 1, 0)
+
+  def binary_crossentropy(self, y:Tensor) -> Tensor:
+    return (-y*self.log() + (1-y)*(1-self).log()).mean()
+
+  def binary_crossentropy_logits(self, y:Tensor) -> Tensor:
+    return (self.maximum(0) - (y*self) + (1+self.abs().neg().exp()).log()).mean()
 
 
   
@@ -263,9 +293,6 @@ randint
 pow
 
 # reduce ops
-avg_pool2d
-max_pool2d
-conv2d
 cumsum
 triu
 tril
@@ -279,12 +306,11 @@ repeat
 chunk
 
 # functional
-linear
-layernorm
+avg_pool2d
+max_pool2d
+conv2d
 batchnorm
 dropout
 scaled_dot_product_attention
-binary_crossentropy
-binary_crossentropy_logits
 sparse_categorial_crossentropy
 """
