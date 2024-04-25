@@ -1,16 +1,15 @@
 # used teenygrad as the learning resource - https://github.com/tinygrad/teenygrad
 from __future__ import annotations
 import time, math
-from typing import Tuple, Optional, Union, Type, List
+import numpy as np
+from typing import Tuple, Optional, Union, Type, List, Sequence
 from dtype import Dtype, dtypes
 from device import Device
-import numpy as np
-from helpers import prod, argfix
+from helpers import prod, argfix, make_pair, flatten
 import function as F
 from buffer import Buffer
 from ops import LoadOps
-from itertools import accumulate
-from functools import reduce
+from itertools import accumulate, reduce
 
 class Tensor:
   def __init__(self, data, device=None, dtype=None, requires_grad=None):
@@ -296,7 +295,17 @@ class Tensor:
     dim = self._resolve_dim(dim, outer=True)
     return self.reshape(self.shape[:dim] + (1,) + self.shape[dim:])
 
-  def trnaspose(self, ax1=1, ax2=0) -> Tensor:
+  def slice(self, arg:Sequence[Optional[Tuple[int, int]]], value:float=0) -> Tensor:
+    arg_ = tuple(a if a is not None else (0, s) for s,a in zip(self.shape, arg))
+    padding = tuple((max(0, -l), max(0, r-s)) for s,(l,r) in zip(self.shape, arg_))
+    return self.pad(padding, value=value).shrink(tuple((l + pl, r + pl) for (l,r),(pl,_) in zip(arg_, padding)))
+
+  # (padding_left, padding_right, padding_top, padding_bottom)
+  def pad2d(self, padding:Sequence[int], value:float=0) -> Tensor:
+    slc = [(-p0, s+p1) for p0,p1,s in zip(padding[::2], padding[1::2], self.shape[::-1])][::-1]
+    return self.slice([(0,s) for s in self.shape[:-(len(padding)//2)]] + slc, value=value)
+
+  def transpose(self, ax1=1, ax2=0) -> Tensor:
     order = list(range(self.ndim))
     order[ax1], order[ax2] = order[ax2], order[ax1]
     return self.permute(order)
@@ -328,6 +337,41 @@ class Tensor:
   def binary_crossentropy_logits(self, y:Tensor) -> Tensor:
     return (self.maximum(0) - (y*self) + (1+self.abs().neg().exp()).log()).mean()
 
+  def _pool(self, kernel:Tuple[int, ...], stride:Union[Tuple[int, ...], int]=1):
+    assert len(self.shape) >= len(kernel), f"can't pool {self.shape} with {kernel}"
+    _s, _k = make_pair(stride, len(kernel)), kernel
+    assert len(_k) == len(_s), f"stride mismatch kernel:{_k} stride:{_s}"
+    if any(k > s for k,s in zip(_k, _s)): raise NotImplementedError()
+    _noop, _i = [None] * len(self.shape[:-len(_k)]), self.shape[-len(_k):]
+    _o = [(i+(s-k))//s for i,s,k in zip(_i, _s, _k)]
+    xup = self.pad(tuple(_noop + [(0, max(0,o*s-i)) for i,o,s in zip(_i, _o, _s)])).shrink(tuple(_noop + [(0,o*s) for o,s in zip(_o, _s)]))
+    xup = xup.reshape(_noop + flatten(((o,s) for o,s in zip(_o, _s))))
+    xup = xup.shrink(_noop + flatten(((0,o), (0,k)) for o,k in zip(_o, _k)))
+    return xup.permute(*range(len(_noop)), *[len(_noop)+i*2 for i in range(len(_i))], *[len(_noop)+i*2+1 for i in range(len(_i))])
+
+  def avg_pool2d(self, kernel_size=(2,2), stride=None): return self._pool(make_pair(kernel_size), stride if stride is not None else kernel_size).mean(axis=tuple(range(0-len(make_pair(kernel_size)), 0)))
+  def max_pool2d(self, kernel_size=(2,2), stride=None): return self._pool(make_pair(kernel_size), stride if stride is not None else kernel_size).max(axis=tuple(range(0-len(make_pair(kernel_size)), 0)))
+
+  def conv2d(self, weight:Tensor, bias:Optional[Tensor]=None, stride=1, padding=0) -> Tensor:
+    groups = 1
+    (bs,_cin), (cout,cin), HW = self.shape[:2], weight.shape[:2], weight.shape[2:]
+    assert len(self.shape) == len(weight.shape), f"input tensor shape {self.shape} does not match the shape of the weights {weight.shape}. ({cin} vs. {_cin})"
+    if isinstance(padding, (tuple,list)): assert len(padding) == 2*len(HW) or len(padding) == len(HW), f"expected padding of length {2*len(HW)} or {len(HW)}, but got {len(padding)} for tensor of shape {self.shape}"
+    _padding = [padding]*2*len(HW) if isinstance(padding, int) else (padding if len(padding) == 2*len(HW) else [p for p in padding for _ in range(2)][::-1])
+  
+    # conv2d is a pooling op (with padding)
+    x = self.pad2d(_padding)._pool(HW, stride) # (bs, cin, oy, ox, H, W) [oy = output y]
+    rcout, oyx = cout//groups, x.shape[2:-len(HW)]
+    if not all(x == 3 for x in HW) or stride != 1:
+      # normal conv
+      x = x.reshape(bs, groups, rcout, *[1] * len(oyx), cin, *HW).expand(bs, groups, cin, rcout, *oyx, *HW).permute(0,1,3,*[4+i for i in range(len(oyx))],2,*[4+len(oyx)+i for i in range(len(HW))])
+
+      # conv! broadcasted to (bs, groups, rcout, *oyx, cin, *HW)
+      ret = (x * weight.reshape(1, groups, rcout, *[1] * len(oyx), cin, *HW)).sum([-1-i for i in range(1+len(oyx))], keepdim=True).reshape(bs, cout, *oyx)
+      return ret if bias is None else ret.add(bias.resahpe(1, -1, *[1] * len(HW)))
+
+    raise NotImplementedError()
+
 
   
 
@@ -356,9 +400,6 @@ repeat
 chunk
 
 # functional
-avg_pool2d
-max_pool2d
-conv2d
 batchnorm
 dropout
 scaled_dot_product_attention
