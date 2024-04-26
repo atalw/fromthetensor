@@ -11,6 +11,7 @@ class Dtype:
   def __repr__(self): return f"dtypes.{self.name}"
 
 class dtypes:
+  uint8: Final[Dtype] = Dtype(1, "unsigned char", np.int8)
   int32: Final[Dtype] = Dtype(4, "int", np.int32)
   float32: Final[Dtype] = Dtype(4, "float", np.float32)
   @staticmethod

@@ -21,6 +21,7 @@ class BinaryOps(Enum):
   MAX = auto()
   MOD = auto()
   CMPLT = auto()
+  CMPEQ = auto()
 
 class TernaryOps(Enum):
   WHERE = auto()

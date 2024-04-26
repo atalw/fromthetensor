@@ -10,6 +10,7 @@ def argfix(*x): return tuple(x[0]) if x and x[0].__class__ in (tuple, list) else
 def dedup(x): return list(dict.fromkeys(x))   # retains list order
 def make_pair(x:Union[int, Tuple[int, ...]], cnt=2) -> Tuple[int, ...]: return (x,)*cnt if isinstance(x, int) else x
 def flatten(l:Iterator): return [item for sublist in l for item in sublist]
+def round_up(num, amt:int): return (num+amt-1)//amt * amt
 
 OSX = platform.system() == "Darwin"
 _cache_dir: str = os.path.expanduser("~/Library/Caches" if OSX else "~/.cache")

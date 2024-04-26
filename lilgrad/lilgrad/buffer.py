@@ -1,7 +1,7 @@
 from __future__ import annotations
 import numpy as np
 from lilgrad.ops import UnaryOps, BinaryOps, TernaryOps, ReduceOps, MovementOps, LoadOps
-from lilgrad.dtype import dtypes
+from lilgrad.dtype import Dtype, dtypes
 
 class Buffer:
   device = "CPU"
@@ -12,12 +12,11 @@ class Buffer:
   def dtype(self) : return dtypes.from_np(self._np.dtype)
 
   @property
-  def shape(self): 
-    print("here")
-    return self._np.shape
+  def shape(self): return self._np.shape
   def __repr__(self): return f"<B {self.shape} {self.dtype}"
 
   def const(self, x) -> Buffer: return Buffer(np.full_like(self._np, x))
+  def cast(self, dtype:Dtype, bitcast:bool=False): return Buffer(self._np.view(dtype.np) if bitcast else self._np.astype(dtype.np))
 
   @staticmethod
   def loadop(op, shape, dtype, device, arg=None, src=None) -> Buffer:
@@ -37,13 +36,15 @@ class Buffer:
     elif op == BinaryOps.MUL: ret = self._np * srcs[0]._np
     elif op == BinaryOps.DIV: ret = self._np / srcs[0]._np
     elif op == BinaryOps.MAX: ret = np.maximum(self._np, srcs[0]._np)
+    elif op == BinaryOps.CMPLT: ret = self._np < srcs[0]._np
+    elif op == BinaryOps.CMPEQ: ret = self._np == srcs[0]._np
     elif op == TernaryOps.WHERE: ret = np.where(self._np, srcs[0]._np, srcs[1]._np)
     else: raise NotImplementedError(op)
     return Buffer(ret.astype(self.dtype.np, copy=False))
   
   # reduce ops
   def r(self, op, new_shape):
-    assert len(self.shape) == len(new_shape, "reduce shapes must have same dimesions")
+    assert len(self.shape) == len(new_shape), "reduce shapes must have same dimesions"
     axis = tuple(i for i,(a,b) in enumerate(zip(self.shape, new_shape)) if a != b)
     if op == ReduceOps.SUM: return Buffer(self._np.sum(axis, dtype=self._np.dtype, keepdims=True))
     elif op == ReduceOps.MAX: return Buffer(self._np.max(axis, keepdims=True))

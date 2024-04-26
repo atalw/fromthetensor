@@ -1,6 +1,6 @@
 from typing import List 
-from tensor import Tensor
-from helpers import dedup
+from lilgrad.tensor import Tensor
+from lilgrad.helpers import dedup
 
 class Optimizer:
   def __init__(self, params: List[Tensor], lr: float):

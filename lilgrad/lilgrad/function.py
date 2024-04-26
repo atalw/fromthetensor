@@ -3,18 +3,12 @@ import math
 from typing import Tuple, Optional, Type
 from lilgrad.buffer import Buffer
 import lilgrad.tensor as tensor 
+from lilgrad.dtype import Dtype
 from lilgrad.ops import UnaryOps, BinaryOps, TernaryOps, ReduceOps, MovementOps
 from lilgrad.helpers import argsort
 
 """
 forward and backward passes of low level ops
-
-unimplemented:
-  # unary ops
-  relu
-  sigmoid
-  # binary ops
-  less
 
 """
 
@@ -35,6 +29,14 @@ class Function:
     if ctx.requires_grad and not tensor.Tensor.no_grad: ret._ctx = ctx
     return ret
 
+
+class Cast(Function):
+  def forward(self, x:Buffer, dtype:Dtype, bitcast:bool=False) -> Buffer:
+    self.input_dtype, self.bitcast = x.dtype, bitcast
+    return x.cast(dtype, bitcast)
+
+  def backward(self, grad_output:Buffer) -> Buffer:
+    return grad_output.cast(self.input_dtype, self.bitcast)
 
 # *** unary ops ***
 
@@ -106,6 +108,14 @@ class Sigmoid(Function):
     return self.ret.e(BinaryOps.MUL, self.ret.cost(1).e(BinaryOps.SUB, self.ret)).e(BinaryOps.MUL, grad)
 
 # *** binary ops ***
+
+class Less(Function):
+  def forward(self, x:Buffer, y:Buffer) -> Buffer:
+    return x.e(BinaryOps.CMPLT, y)
+
+class Eq(Function):
+  def forward(self, x:Buffer, y:Buffer) -> Buffer: return x.e(BinaryOps.CMPEQ, y)
+  def backward(self, grad:Buffer) -> Tuple[Optional[Buffer], Optional[Buffer]]: return None, None
 
 class Add(Function):
   def forward(self, x:Buffer, y:Buffer) -> Buffer:
