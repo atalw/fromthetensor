@@ -181,7 +181,7 @@ class Expand(Function):
   def backward(self, grad:Buffer) -> Buffer:
     return grad.r(ReduceOps.SUM, self.input_shape)
 
-class Resahpe(Function):
+class Reshape(Function):
   def forward(self, x:Buffer, shape:Tuple[int, ...]) -> Buffer:
     self.input_shape = x.shape
     return x.m(MovementOps.RESHAPE, shape)

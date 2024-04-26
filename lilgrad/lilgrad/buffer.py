@@ -12,17 +12,18 @@ class Buffer:
   def dtype(self) : return dtypes.from_np(self._np.dtype)
 
   @property
-  def shape(self): return self._np.shape
+  def shape(self): 
+    print("here")
+    return self._np.shape
   def __repr__(self): return f"<B {self.shape} {self.dtype}"
 
   def const(self, x) -> Buffer: return Buffer(np.full_like(self._np, x))
 
-  # @staticmethod
-  # def loadop(op, shape, dtype, device, arg=None, src=None) -> Buffer:
-  #   if op == LoadOps.RAND: return Buffer(np.random.default_rng(arg).random(size=shape, dtype=dtype.np))
-  #   elif op == LoadOps.CONST: return Buffer(np.full(shape, arg, dtype=dtype.np))
-  #   elif op == LoadOps.EMPTY: return Buffer(np.empty(shape, dtype=dtype.np))
-  #   else: raise NotImplementedError(op)
+  @staticmethod
+  def loadop(op, shape, dtype, device, arg=None, src=None) -> Buffer:
+    if op == LoadOps.RAND: return Buffer(np.random.default_rng(arg).random(size=shape, dtype=dtype.np))
+    elif op == LoadOps.EMPTY: return Buffer(np.empty(shape, dtype=dtype.np))
+    else: raise NotImplementedError(op)
 
   # element-wise ops
   def e(self, op, *srcs:Buffer):

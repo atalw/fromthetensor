@@ -29,14 +29,14 @@ class Tensor:
     elif data is None or data.__class__ is list:
       assert dtype is None or dtype.np is not None, f"{dtype} doesn't have a numpy dtype"
       data = Buffer(np.array([] if data is None else data, (dtype.np or Tensor.default_type)))
+    elif isinstance(data, bytes):
+      data = Buffer(np.frombuffer(data, np.uint8))
     elif isinstance(data, np.ndarray):
       assert dtype is None or dtype.np is not None, f"{dtype} doesn't have a numpy dtype"
-      if data.shape == ():
-        data = Buffer(np.full(tuple(), data, dtypes.from_np(data.dtype)))
-      else:
-        data = Buffer(data)
+      if data.shape == (): data = Buffer(np.full(tuple(), data, dtypes.from_np(data.dtype)))
+      else: data = Buffer(data)
+    else:  raise NotImplementedError()
     self.data = data
-    _seed: int = int(time.time())
 
   def __repr__(self):
     return f"<Tensor {self.data!r} on {self.device} with grad {(self.grad.data if self.grad else None)!r}"
@@ -119,10 +119,11 @@ class Tensor:
   @staticmethod
   def eye(dim:int, **kwargs) -> Tensor: return Tensor.full((dim,1),1,**kwargs).pad(((0,0),(0,dim))).reshape(dim*(dim+1)).shrink(((0,dim*dim),)).reshape(dim,dim)
 
+  _seed: int = int(time.time())
   @staticmethod
   def rand(*shape, **kwargs) -> Tensor:
     Tensor._seed += 1
-    return Tensor._loadop(LoadOps.RAND, prod((shape:=argfix(*shape))), arg=Tensor._seed, **kwargs).reshape(shape)  @staticmethod
+    return Tensor._loadop(LoadOps.RAND, prod((shape:=argfix(*shape))), arg=Tensor._seed, **kwargs).reshape(shape)
 
   @staticmethod
   def randn(*shape, dtype:Optional[Dtype]=None, **kwargs) -> Tensor:
@@ -179,7 +180,7 @@ class Tensor:
   def mul(self, x:Tensor) -> Tensor: return F.Mul.apply(self, x)
   def div(self, x:Tensor) -> Tensor: return F.Div.apply(self, x)
   def dot(self, w:Tensor) -> Tensor:
-    n1, n2 = len(self.shape), len(x.shape)
+    n1, n2 = len(self.shape), len(w.shape)
     assert n1 == n2 != 0, f"both args to matmul need ot be at least 1D, but they are {n1}D and {n2}D"
     assert (s1 := self.shape[-1]) == (s2 := w.shape[-min(n2, 2)]), f"input tensor shapes {self.shape} and {w.shape} cannot be multiplied ({s1} != {s2})"
     x = self.reshape(*self.shape[0:-1], *[1]*min(n1-1, n2-1, 1), self.shape[-1])
@@ -251,7 +252,7 @@ class Tensor:
 
   def reshape(self, shape, *args) -> Tensor:
     new_shape = argfix(shape, *args)
-    return F.Resahpe.apply(self, shape=tuple([-prod(self.shape)//prod(new_shape) if s == -1 else (s if s is not None else self.shape[i]) for i,s in enumerate(new_shape)]))
+    return F.Reshape.apply(self, shape=tuple([-prod(self.shape)//prod(new_shape) if s == -1 else (s if s is not None else self.shape[i]) for i,s in enumerate(new_shape)]))
 
   def expand(self, shape, *args) -> Tensor: return F.Expand.apply(self, shape=tuple([x if x != -1 else s for s,x in zip(self.shape, argfix(shape, *args))]))
 
