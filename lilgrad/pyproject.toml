@@ -1,0 +1,9 @@
+[project]
+name = "lilgrad"
+version = "0.0.1"
+authors = [
+  { name="atalw" },
+]
+description = "little auto grad ML framework"
+readme = "README.md"
+requires-python = ">=3.8"

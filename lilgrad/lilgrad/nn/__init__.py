@@ -1,7 +1,7 @@
 import math
 from typing import cast
-from tensor import Tensor
-from helpers import prod
+from lilgrad.tensor import Tensor
+from lilgrad.helpers import prod
 
 class Linear:
   def __init__(self, in_features, out_features, bias=True):

@@ -3,13 +3,14 @@ from __future__ import annotations
 import time, math
 import numpy as np
 from typing import Tuple, Optional, Union, Type, List, Sequence
-from dtype import Dtype, dtypes
-from device import Device
-from helpers import prod, argfix, make_pair, flatten
-import function as F
-from buffer import Buffer
-from ops import LoadOps
-from itertools import accumulate, reduce
+from lilgrad.dtype import Dtype, dtypes
+from lilgrad.device import Device
+from lilgrad.helpers import prod, argfix, make_pair, flatten
+import lilgrad.function as F
+from lilgrad.buffer import Buffer
+from lilgrad.ops import LoadOps
+from itertools import accumulate
+from functools import reduce
 
 class Tensor:
   def __init__(self, data, device=None, dtype=None, requires_grad=None):
@@ -242,7 +243,6 @@ class Tensor:
     return self.shape[axis]-idx.max(axis=axis, keepdim=keepdim)-1
   def argmin(self, axis=None, keepdim=False) -> Tensor: return (-self).argmax(axis=axis, keepdim=keepdim)
 
-
   # *** movement ***
   def _resolve_dim(self, dim:int, *, outer:bool=False) -> int:
     if not -max(1, self.ndim+outer) <= dim < max(1, self.ndim+outer):
@@ -397,11 +397,6 @@ class Tensor:
 """
 *** high level tensor ops ***
 
-# creation helpers
-rand
-randn
-randint
-
 # binary
 pow
 
@@ -413,14 +408,10 @@ tril
 # movement ops
 __getitem__
 __setitem__
-slice
 stack
 repeat
 chunk
 
 # functional
-batchnorm
-dropout
 scaled_dot_product_attention
-sparse_categorial_crossentropy
 """

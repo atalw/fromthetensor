@@ -1,7 +1,7 @@
 from __future__ import annotations
 import numpy as np
-from ops import UnaryOps, BinaryOps, TernaryOps, ReduceOps, MovementOps, LoadOps
-from dtype import dtypes
+from lilgrad.ops import UnaryOps, BinaryOps, TernaryOps, ReduceOps, MovementOps, LoadOps
+from lilgrad.dtype import dtypes
 
 class Buffer:
   device = "CPU"

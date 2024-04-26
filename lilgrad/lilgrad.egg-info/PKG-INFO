@@ -1,0 +1,7 @@
+Metadata-Version: 2.1
+Name: lilgrad
+Version: 0.0.1
+Summary: little auto grad ML framework
+Author: atalw
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown

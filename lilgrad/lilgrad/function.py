@@ -1,10 +1,10 @@
 from __future__ import annotations
 import math
 from typing import Tuple, Optional, Type
-from buffer import Buffer
-import tensor
-from ops import UnaryOps, BinaryOps, TernaryOps, ReduceOps, MovementOps
-from helpers import argsort
+from lilgrad.buffer import Buffer
+import lilgrad.tensor as tensor 
+from lilgrad.ops import UnaryOps, BinaryOps, TernaryOps, ReduceOps, MovementOps
+from lilgrad.helpers import argsort
 
 """
 forward and backward passes of low level ops
