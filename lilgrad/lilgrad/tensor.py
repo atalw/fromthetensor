@@ -25,6 +25,7 @@ class Tensor:
     def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any): Tensor.training = self.prev
 
   no_grad: ClassVar[bool] = False
+  default_type: ClassVar[Dtype] = dtypes.float32
   def __init__(self, data, device=None, dtype=None, requires_grad=None):
     assert dtype is None or isinstance(dtype, Dtype), f"invalid dtype {dtype}"
     device = Device.canonicalize(device)
@@ -37,10 +38,10 @@ class Tensor:
     self._ctx: Optional[F.Function] = None
     if isinstance(data, Buffer): assert dtype is None or dtype == data.dtype, "dtype doesn't match"
     elif isinstance(data, (int, float)):
-      data = Buffer(np.full(tuple(), data, dtype.np if dtype else dtypes.float32.np))
+      data = Buffer(np.full(tuple(), data, dtype.np if dtype is not None else Tensor.default_type.np))
     elif data is None or data.__class__ is list:
       assert dtype is None or dtype.np is not None, f"{dtype} doesn't have a numpy dtype"
-      data = Buffer(np.array([] if data is None else data, dtype.np if dtype else dtypes.float32.np))
+      data = Buffer(np.array([] if data is None else data, dtype.np if dtype is not None else Tensor.default_type.np))
     elif isinstance(data, bytes):
       data = Buffer(np.frombuffer(data, np.uint8))
     elif isinstance(data, np.ndarray):
@@ -112,7 +113,7 @@ class Tensor:
   @staticmethod
   def _loadop(op, sz, device:Optional[str]=None, dtype:Optional[Dtype]=None, arg=None, **kwargs) -> Tensor:
     assert isinstance(sz, int), f"cannot create with symbolic size {sz}"
-    return Tensor(Buffer.loadop(op, (sz,), dtype or dtypes.float32, Device.canonicalize(device), arg), dtype=dtype, device=device, **kwargs)
+    return Tensor(Buffer.loadop(op, (sz,), dtype if dtype is not None else Tensor.default_type, Device.canonicalize(device), arg), dtype=dtype, device=device, **kwargs)
 
   @staticmethod
   def empty(*shape, **kwargs) -> Tensor: return Tensor._loadop(LoadOps.EMPTY, prod((shape:=argfix(*shape))), **kwargs).reshape(shape)
@@ -144,7 +145,7 @@ class Tensor:
   def randn(*shape, dtype:Optional[Dtype]=None, **kwargs) -> Tensor:
     # https://en.wikipedia.org/wiki/Box%E2%80%93Muller_transform
     src = Tensor.rand((2, *argfix(*shape)), **{**kwargs, "dtype": dtypes.float32})
-    return src[0].mul(2*math.pi).cos().mul((1 - src[1]).log().mul(-2).sqrt())
+    return src[0].mul(2*math.pi).cos().mul((1 - src[1]).log().mul(-2).sqrt()).cast(dtype or dtypes.float32)
 
   @staticmethod
   def randint(*shape, low=0, high=10, **kwargs) -> Tensor: return Tensor.uniform(*shape, low=low, high=high, **kwargs).cast(dtypes.int32)
@@ -153,7 +154,9 @@ class Tensor:
   def normal(*shape, mean=0.0, std=1.0, **kwargs) -> Tensor: return (std * Tensor.randn(*shape, **kwargs)) + mean
 
   @staticmethod
-  def uniform(*shape, low=0.0, high=1.0, **kwargs) -> Tensor: return ((high-low) * Tensor.rand(*shape, **kwargs)) + low
+  def uniform(*shape, low=0.0, high=1.0, **kwargs) -> Tensor:
+    dtype = kwargs.pop("dtype", Tensor.default_type)
+    return ((high-low) * Tensor.rand(*shape, **kwargs)).cast(dtype) + low
 
   @staticmethod
   def kaiming_uniform(*shape, a:float=0.01, **kwargs) -> Tensor:
