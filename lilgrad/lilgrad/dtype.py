@@ -17,10 +17,11 @@ class dtypes:
   def is_float(x: Dtype) -> bool: return x == dtypes.float32
   @staticmethod
   def is_unsigned(x: Dtype) -> bool: return x == dtypes.uint8
+  @staticmethod
+  def from_np(x) -> Dtype: return DTYPES_DICT[np.dtype(x).name]
+  bool: Final[Dtype] = Dtype(1, "bool", np.bool_)
   uint8: Final[Dtype] = Dtype(1, "unsigned char", np.uint8)
   int32: Final[Dtype] = Dtype(4, "int", np.int32)
   float32: Final[Dtype] = Dtype(4, "float", np.float32)
-  @staticmethod
-  def from_np(x) -> Dtype: return DTYPES_DICT[np.dtype(x).name]
 
 DTYPES_DICT = {k: v for k, v in dtypes.__dict__.items() if not k.startswith('__') and not callable(v) and not v.__class__ == staticmethod}

@@ -318,8 +318,8 @@ class Tensor:
     return dim + self.ndim+outer if dim < 0 else dim
 
 
-# blindly copied
- # Supported Indexing Implementations:
+  # blindly copied
+  # Supported Indexing Implementations:
   #   1. Int indexing (no copy)
   #     - for all dims where there's int, shrink -> reshape
   #     - negative indices are taken relative to the end of the sequence, so X[-2] returns the 2nd-to-last element
@@ -537,7 +537,7 @@ class Tensor:
   def dropout(self, p:float=0.5) -> Tensor:
     if not Tensor.training or p == 0: return self
     # scaling - https://cs231n.github.io/neural-networks-2/
-    return self * (Tensor.rand(*self.shape, requires_grad=False, device=self.device) >= p) * (1/(1.0 - p))
+    return self * (Tensor.rand(*self.shape, requires_grad=False, device=self.device) >= p).cast(dtypes.bool) * (1/(1.0 - p))
 
   def one_hot(self, num_classes:int) -> Tensor:
     return Tensor.where(self[..., None] == Tensor.arange(num_classes, requires_grad=False, device=self.device), 1, 0)
@@ -548,14 +548,12 @@ class Tensor:
   def binary_crossentropy_logits(self, y:Tensor) -> Tensor:
     return (self.maximum(0) - (y*self) + (1+self.abs().neg().exp()).log()).mean()
   
-  def sparse_categorical_crossentropy(self, Y:Tensor, ignore_index=-1, label_smoothing=0.0) -> Tensor:
-    assert 0.0 <= label_smoothing <= 1.0, "label_smoothing must be in [0.0, 1.0]"
+  def sparse_categorical_crossentropy(self, Y:Tensor, ignore_index=-1) -> Tensor:
     # NOTE: self is a logits input
-    log_probs, loss_mask = self.log_softmax(), (Y != ignore_index)
-    y_counter = Tensor.arange(self.shape[-1], requires_grad=False, device=self.device).unsqueeze(0).expand(Y.numel(), self.shape[-1])
-    y = ((y_counter == Y.flatten().reshape(-1, 1)).where(-1, 0) * loss_mask.reshape(-1, 1)).reshape(*Y.shape, self.shape[-1])
-    smoothing = -1 * label_smoothing * (log_probs.mean(-1) * loss_mask).sum() / loss_mask.sum()
-    return (1 - label_smoothing) * (log_probs * y).sum() / loss_mask.sum() + smoothing
+    loss_mask = (Y != ignore_index).cast(dtypes.int32)
+    y_counter = Tensor.arange(self.shape[-1], dtype=dtypes.int32, requires_grad=False, device=self.device).unsqueeze(0).expand(Y.numel(), self.shape[-1])
+    y = ((y_counter == Y.flatten().reshape(-1, 1)).where(-1.0, 0) * loss_mask.reshape(-1, 1)).reshape(*Y.shape, self.shape[-1])
+    return self.log_softmax().mul(y).sum() / loss_mask.sum()
 
   def _pool(self, k_:Tuple[int, ...], stride:Union[Tuple[int, ...], int]=1, dilation:Union[Tuple[int, ...], int]=1) -> Tensor:
     assert len(self.shape) >= len(k_), f"can't pool {self.shape} with {k_}"
