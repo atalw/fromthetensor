@@ -25,6 +25,8 @@ class Model:
 
 if __name__ == "__main__":
   X_train, Y_train, X_test, Y_test = mnist()
+  n = 1000
+  X_train = X_train[:n]
 
   model = Model()
   opt = optim.SGD(state.get_parameters(model))
@@ -33,7 +35,9 @@ if __name__ == "__main__":
     with Tensor.train():
       opt.zero_grad()
       samples = Tensor.randint(512, high=X_train.shape[0])
-      loss = model(X_train[samples]).sparse_categorical_crossentropy(Y_train[samples]).backward()
+      out = model(X_train[samples])
+      loss = out.sparse_categorical_crossentropy(Y_train[samples])
+      loss.backward()
       opt.step()
       return loss
 
@@ -43,4 +47,4 @@ if __name__ == "__main__":
   for i in (t:=trange(70)):
     loss = train_step()
     if i%10 == 9: test_acc = get_test_acc().item()
-    t.set_description(f"loss: {loss.item():6.2f} test_accuracy: {test_acc:5.2f}%")
+    t.set_description(f"loss: {loss.numpy():6.2f} test_accuracy: {test_acc:5.2f}%")

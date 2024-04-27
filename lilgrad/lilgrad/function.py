@@ -178,8 +178,10 @@ class Max(Function):
     return self.ret
 
   def backward(self, grad:Buffer) -> Buffer:
-    # TODO
-    return grad.m(MovementOps.EXPAND, self.input_shape)
+    # 1s in locations where the max was chosen (can be two locations)
+    max_is_1s = self.x.const(1.0).e(BinaryOps.SUB, self.x.e(BinaryOps.CMPLT, self.ret.m(MovementOps.EXPAND, self.x.shape)))
+    div = max_is_1s.r(ReduceOps.SUM, grad.shape).m(MovementOps.EXPAND, self.x.shape)
+    return max_is_1s.e(BinaryOps.DIV, div).e(BinaryOps.MUL, grad.m(MovementOps.EXPAND, self.x.shape))
 
 # *** movement ops ***
 
