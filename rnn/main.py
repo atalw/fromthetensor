@@ -75,6 +75,7 @@ def train(train_dataset):
     num_epochs = 2
     print_interval = 1000
 
+    # Revisit when tinygrad releases 0.10.4 as it will have https://github.com/tinygrad/tinygrad/pull/10510 upstreamed. Buffer limit of 30 kernels on METAL is blocking training.
     for epoch in range(num_epochs):
       random.shuffle(train_dataset)
       for i, (name, label) in enumerate(train_dataset):
