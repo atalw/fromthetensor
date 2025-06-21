@@ -86,7 +86,7 @@ def train(train_dataset):
         loss.backward()
         for param in get_parameters(model):
           param.grad = param.grad.clip(-1, 1)
-        (-1, 1)opt.step()
+        opt.step()
 
         if (i + 1) % print_interval == 0:
           print(
