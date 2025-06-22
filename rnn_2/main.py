@@ -31,23 +31,42 @@ def create_music_vocabulary(data):
   return vocab_size, char_to_idx, idx_to_char
 
 def char_to_tensor(s, vocab_size):
-    tensor = torch.zeros(len(s), 1, vocab_size)
-    for i, char in enumerate(s):
-        tensor[i][0][char_to_idx[char]] = 1
-    return tensor
+  tensor = torch.zeros(len(s), 1, vocab_size)
+  for i, char in enumerate(s):
+      tensor[i][0][char_to_idx[char]] = 1
+  return tensor
 
 def get_random_chunk(data, vocab_size):
-    chunk_len = 100 # How many characters to train on at a time
-    start_index = random.randint(0, len(data) - chunk_len)
-    end_index = start_index + chunk_len + 1
-    chunk = data[start_index:end_index]
-    
-    # The input is all characters except the last
-    input_chunk = char_to_tensor(chunk[:-1], vocab_size)
-    # The target is all characters except the first
-    target_chunk = torch.tensor([char_to_idx[c] for c in chunk[1:]], dtype=torch.long)
-    
-    return input_chunk, target_chunk
+  chunk_len = 100 # How many characters to train on at a time
+  start_index = random.randint(0, len(data) - chunk_len)
+  end_index = start_index + chunk_len + 1
+  chunk = data[start_index:end_index]
+  
+  # The input is all characters except the last
+  input_chunk = char_to_tensor(chunk[:-1], vocab_size)
+  # The target is all characters except the first
+  target_chunk = torch.tensor([char_to_idx[c] for c in chunk[1:]], dtype=torch.long)
+  
+  return input_chunk, target_chunk
+
+class SimpleRNN(nn.Module):
+  def __init__(self, input_size, hidden_size, output_size):
+    super(SimpleRNN, self).__init__()
+    self.hidden_size = hidden_size
+    self.i2h = nn.Linear(input_size + hidden_size, hidden_size)
+    self.i2o = nn.Linear(input_size + hidden_size, output_size)
+    self.softmax = nn.LogSoftmax(dim=1)
+
+  def forward(self, input_char, hidden_state):
+    combined = torch.cat((input_char, hidden_state), 1)
+    # This is the core recurrent equation: h_t = tanh(W_xh*x_t + W_hh*h_{t-1} + b_h)
+    hidden = torch.tanh(self.i2h(combined))
+    output = self.i2o(combined)
+    output = self.softmax(output)
+    return output, hidden
+
+  def init_hidden(self):
+    return torch.zeros(1, self.hidden_size)
 
 if __name__ == "__main__":
   data = read_music()
