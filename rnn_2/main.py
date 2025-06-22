@@ -23,19 +23,39 @@ def read_music():
 def create_music_vocabulary(data):
   all_characters = sorted(list(set(data)))
   vocab_size = len(all_characters)
-
   print(f"Vocabulary contains {vocab_size} unique characters.")
   print(f"Vocabulary: {''.join(all_characters)}")
-
   # Create character-to-index and index-to-character mappings
   char_to_idx = {char: i for i, char in enumerate(all_characters)}
   idx_to_char = {i: char for i, char in enumerate(all_characters)}
+  return vocab_size, char_to_idx, idx_to_char
 
-  return char_to_idx, idx_to_char
+def char_to_tensor(s, vocab_size):
+    tensor = torch.zeros(len(s), 1, vocab_size)
+    for i, char in enumerate(s):
+        tensor[i][0][char_to_idx[char]] = 1
+    return tensor
+
+def get_random_chunk(data, vocab_size):
+    chunk_len = 100 # How many characters to train on at a time
+    start_index = random.randint(0, len(data) - chunk_len)
+    end_index = start_index + chunk_len + 1
+    chunk = data[start_index:end_index]
+    
+    # The input is all characters except the last
+    input_chunk = char_to_tensor(chunk[:-1], vocab_size)
+    # The target is all characters except the first
+    target_chunk = torch.tensor([char_to_idx[c] for c in chunk[1:]], dtype=torch.long)
+    
+    return input_chunk, target_chunk
 
 if __name__ == "__main__":
   data = read_music()
-  char_to_idx, idx_to_char = create_music_vocabulary(data)
+  vocab_size, char_to_idx, idx_to_char = create_music_vocabulary(data)
   print(char_to_idx)
   print(idx_to_char)
+
+  input_chunk, target_chunk = get_random_chunk(data, vocab_size)
+  print(input_chunk)
+  print(target_chunk)
 
