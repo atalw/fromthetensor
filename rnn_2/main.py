@@ -68,13 +68,34 @@ class SimpleRNN(nn.Module):
   def init_hidden(self):
     return torch.zeros(1, self.hidden_size)
 
+def train(model, optimizer, criterion, input_tensor, target_tensor):
+  hidden = model.init_hidden()
+  optimizer.zero_grad()
+  loss = 0
+  
+  # Loop through each character in the input chunk
+  for i in range(input_tensor.size(0)):
+    output, hidden = model(input_tensor[i], hidden)
+    loss += criterion(output, target_tensor[i].unsqueeze(0))
+      
+  loss.backward()
+  torch.nn.utils.clip_grad_norm_(model.parameters(), 5) # Gradient clipping
+  optimizer.step()
+  
+  return loss.item() / input_tensor.size(0) # Return average loss
+
 if __name__ == "__main__":
   data = read_music()
   vocab_size, char_to_idx, idx_to_char = create_music_vocabulary(data)
-  print(char_to_idx)
-  print(idx_to_char)
-
   input_chunk, target_chunk = get_random_chunk(data, vocab_size)
-  print(input_chunk)
-  print(target_chunk)
+
+  hidden_size = 128
+  learning_rate = 0.005
+  n_iters = 2000
+  print_interval = 100
+
+  rnn = SimpleRNN(vocab_size, hidden_size, vocab_size)
+  criterion = nn.NLLLoss()
+  optimizer = optim.Adam(rnn.parameters(), lr=learning_rate)
+
 
