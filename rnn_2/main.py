@@ -84,6 +84,36 @@ def train(model, optimizer, criterion, input_tensor, target_tensor):
   
   return loss.item() / input_tensor.size(0) # Return average loss
 
+def generate(model, vocab_size, prime_str='K:G\n|:', predict_len=200, temperature=0.8):
+  model.eval() # Set model to evaluation mode
+  
+  with torch.no_grad():
+    hidden = model.init_hidden()
+    prime_input = char_to_tensor(prime_str, vocab_size)
+    generated_text = prime_str
+
+    # "Warm up" the hidden state with the prime string
+    for i in range(len(prime_str) - 1):
+      _, hidden = model(prime_input[i], hidden)
+    
+    # Use the last character of the prime string as the first input for generation
+    current_input = prime_input[-1]
+
+    for i in range(predict_len):
+      output, hidden = model(current_input, hidden)
+      
+      # Apply temperature to the output probabilities
+      output_dist = output.data.view(-1).div(temperature).exp()
+      top_i = torch.multinomial(output_dist, 1)[0]
+      
+      # Append the predicted character and update the input for the next step
+      predicted_char = idx_to_char[top_i.item()]
+      generated_text += predicted_char
+      current_input = char_to_tensor(predicted_char, vocab_size)[0]
+          
+  model.train() # Set model back to training mode
+  return generated_text
+
 if __name__ == "__main__":
   data = read_music()
   vocab_size, char_to_idx, idx_to_char = create_music_vocabulary(data)
@@ -98,4 +128,30 @@ if __name__ == "__main__":
   criterion = nn.NLLLoss()
   optimizer = optim.Adam(rnn.parameters(), lr=learning_rate)
 
+  all_losses = []
+  current_loss = 0
+  st = time.time()
 
+  for i in range(1, n_iters + 1):
+      input_chunk, target_chunk = get_random_chunk(data, vocab_size)
+      loss = train(rnn, optimizer, criterion, input_chunk, target_chunk)
+      current_loss += loss
+      
+      if i % print_interval == 0:
+          elapsed = time.time() - st 
+          avg_loss = current_loss / print_interval 
+          all_losses.append(avg_loss)
+          current_loss = 0
+          
+          print(f"Iteration: {i}/{n_iters} ({i/n_iters*100:.0f}%) | "
+                f"Loss: {avg_loss:.4f} | "
+                f"Time: {elapsed:.2f}s")
+          
+          print("--- Generated Sample ---")
+          print(generate(rnn, vocab_size))
+          print("------------------------\n")
+
+  print("Training finished.")
+  print("\n--- Final Generated Music ---")
+  print(generate(rnn, vocab_size, predict_len=500))
+  print("-----------------------------\n")
