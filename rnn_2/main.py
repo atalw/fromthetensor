@@ -84,7 +84,7 @@ def train(model, optimizer, criterion, input_tensor, target_tensor):
   
   return loss.item() / input_tensor.size(0) # Return average loss
 
-def generate(model, vocab_size, prime_str='K:G\n|:', predict_len=200, temperature=0.8):
+def generate(model, vocab_size, prime_str='X:9\nT:Generated\nM:3/8\nL:1/8\nR:Bourree (3 time)\nK:G\n', predict_len=200, temperature=0.8):
   model.eval() # Set model to evaluation mode
   
   with torch.no_grad():
