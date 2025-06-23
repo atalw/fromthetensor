@@ -83,11 +83,14 @@ class PositionalEncoding(nn.Module):
     self.dropout = nn.Dropout(p=dropout)
 
     position = torch.arange(max_len).unsqueeze(1)
+    # i = torch.arange(0, d_model, 2)
+    # denominator = torch.pow(10000, i / d_model)
+    # div_term = 1.0 / denominator
     div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
-    pe = torch.zeros(max_len, d_model)
-    pe[:, 0::2] = torch.sin(position * div_term)
-    pe[:, 1::2] = torch.cos(position * div_term)
-    self.register_buffer('pe', pe)
+    pe = torch.zeros(max_len, 1, d_model)
+    pe[:, 0, 0::2] = torch.sin(position * div_term) # even dimensions
+    pe[:, 0, 1::2] = torch.cos(position * div_term) # odd dimensions
+    self.register_buffer('pe', pe) # this means it's not a model parameter but save it with save_state and to load buffer to device. no backprop will be applied despite having a forward func.
 
   def forward(self, x: torch.Tensor) -> torch.Tensor:
     # x is expected to be of shape (batch_size, seq_len, d_model)
