@@ -90,4 +90,42 @@ class PositionalEncoding(nn.Module):
     x = x + self.pe[:x.size(0)]
     return self.dropout(x)
 
+class TransformerClassifier(nn.Module):
+  def __init__(self, vocab_size: int, embed_dim: int, nhead: int, d_hid: int,
+                nlayers: int, dropout: float = 0.5):
+    super().__init__()
+    self.pos_encoder = PositionalEncoding(embed_dim, dropout)
+    self.embedding = nn.Embedding(vocab_size, embed_dim)
+    encoder_layers = nn.TransformerEncoderLayer(d_model=embed_dim, nhead=nhead, dim_feedforward=d_hid, dropout=dropout, batch_first=True)
+    # Stack the encoder layers
+    self.transformer_encoder = nn.TransformerEncoder(encoder_layers, num_layers=nlayers)
+    self.d_model = embed_dim
+    # Final classification head
+    self.classifier = nn.Linear(embed_dim, 2) # 2 classes: positive and negative
+
+    self.init_weights()
+
+  def init_weights(self) -> None:
+    initrange = 0.1
+    self.embedding.weight.data.uniform_(-initrange, initrange)
+    self.classifier.bias.data.zero_()
+    self.classifier.weight.data.uniform_(-initrange, initrange)
+
+  def forward(self, src: torch.Tensor, src_pad_mask: torch.Tensor) -> torch.Tensor:
+    src = self.embedding(src) * math.sqrt(self.d_model)
+    src = self.pos_encoder(src.transpose(0, 1)).transpose(0, 1) # Transpose for PE and back
+    # Pass through the transformer encoder
+        output = self.transformer_encoder(src, src_key_padding_mask=src_pad_mask)
+        
+        # We use the output of the [CLS] token for classification
+        # The [CLS] token is always at the first position
+        cls_output = output[:, 0, :]
+        
+        # Pass through the final classification head
+        return self.classifier(cls_output)
+
+
+
+
+
 
