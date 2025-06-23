@@ -87,9 +87,9 @@ class PositionalEncoding(nn.Module):
     # denominator = torch.pow(10000, i / d_model)
     # div_term = 1.0 / denominator
     div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
-    pe = torch.zeros(max_len, 1, d_model)
-    pe[:, 0, 0::2] = torch.sin(position * div_term) # even dimensions
-    pe[:, 0, 1::2] = torch.cos(position * div_term) # odd dimensions
+    pe = torch.zeros(max_len, d_model)
+    pe[:, 0::2] = torch.sin(position * div_term) # even dimensions
+    pe[:, 1::2] = torch.cos(position * div_term) # odd dimensions
     self.register_buffer('pe', pe) # this means it's not a model parameter but save it with save_state and to load buffer to device. no backprop will be applied despite having a forward func.
 
   def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -172,6 +172,24 @@ def evaluate(model, dataloader, criterion):
           
   return total_acc / total_count, total_loss / len(dataloader)
 
+def predict_sentiment(model, text: str):
+  model.eval()  # Set the model to evaluation mode
+  
+  # Preprocess the text using the same pipeline as training
+  processed_text = text_pipeline(text)
+  processed_text = processed_text[:MAX_LEN - 1] # Truncate
+  processed_text = [CLS_IDX] + processed_text
+  
+  # Convert to tensor, add a batch dimension, and move to the correct device
+  text_tensor = torch.tensor(processed_text, dtype=torch.int64).unsqueeze(0).to(device)
+  
+  # Create a padding mask (all False for a single, unpadded sequence)
+  padding_mask = (text_tensor == PAD_IDX)
+  
+  with torch.no_grad():
+    prediction = model(text_tensor, padding_mask)
+  return "Positive" if prediction.argmax(1).item() == 0 else "Negative"
+
 if __name__ == '__main__':
   # Load the train and test sets. The iterators can only be consumed once.
   # We need to re-initialize them here for the DataLoaders.
@@ -201,3 +219,13 @@ if __name__ == '__main__':
   print("Training finished. Final test evaluation:")
   acc_test, loss_test = evaluate(model, test_dataloader, criterion)
   print(f'Test Accuracy: {acc_test:.3f}, Test Loss: {loss_test:.4f}')
+
+    # Example usage for prediction
+  print("\n--- Predicting on custom reviews ---")
+  review1 = "I absolutely loved this movie! The acting was superb and the plot was gripping."
+  print(f"Review: '{review1}'")
+  print(f"Predicted Sentiment: {predict_sentiment(model, review1)}\n")
+
+  review2 = "This was a complete waste of time. The story was predictable and the characters were one-dimensional."
+  print(f"Review: '{review2}'")
+  print(f"Predicted Sentiment: {predict_sentiment(model, review2)}")
