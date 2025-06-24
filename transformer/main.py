@@ -8,6 +8,9 @@ from torchtext.vocab import build_vocab_from_iterator
 import math
 import time
 
+# Run using:
+# PYTORCH_ENABLE_MPS_FALLBACK=1 python main.py
+
 # Set the device (MPS for Apple Silicon, CUDA for Nvidia, or CPU)
 if torch.backends.mps.is_available():
   device = torch.device("mps")
