@@ -117,6 +117,7 @@ class SublayerConnection(nn.Module):
 
   def forward(self, x, sublayer):
     "Apply residual connection to any sublayer with the same size."
+    # Post-LN applied according to best modern practices. Attention is all you need paper applies Pre-LN.
     return x + self.dropout(sublayer(self.norm(x)))
 
 class EncoderLayer(nn.Module):
