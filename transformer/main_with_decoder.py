@@ -21,15 +21,15 @@ print(f"Using device: {device}")
 
 # Model Hyperparameters
 VOCAB_SIZE = 10000  # Size of the vocabulary
-EMBED_DIM = 256     # Embedding dimension
-HIDDEN_DIM = 512    # Dimension of the feedforward network model in nn.TransformerEncoder
+EMBED_DIM = 512     # Embedding dimension (Increased)
+HIDDEN_DIM = 2048   # Dimension of the feedforward network model (Increased to 4*EMBED_DIM)
 NUM_HEADS = 8       # Number of heads in the multi-head attention models
-NUM_LAYERS = 3      # Number of nn.TransformerEncoderLayer in nn.TransformerEncoder
+NUM_LAYERS = 6      # Number of layers
 MAX_LEN = 256       # Maximum sequence length
 
 # Training Hyperparameters
 BATCH_SIZE = 32
-LEARNING_RATE = 0.0001
+LEARNING_RATE = 0.00005 # A slightly lower LR can be more stable for larger models
 NUM_EPOCHS = 10 # Keep at 10, but note that more epochs might be needed for better quality
 
 tokenizer = get_tokenizer('basic_english')
@@ -52,8 +52,8 @@ POSITIVE_IDX = vocab['<positive>']
 NEGATIVE_IDX = vocab['<negative>']
 
 text_pipeline = lambda x: vocab(tokenizer(x))
-# The IMDB dataset from torchtext provides integer labels (e.g., 1 for positive, 2 for negative).
-label_pipeline = lambda x: POSITIVE_IDX if int(x) == 1 else NEGATIVE_IDX # Map 1 to POS_IDX, 2 to NEG_IDX
+# The IMDB dataset from torchtext provides integer labels (1 for negative, 2 for positive).
+label_pipeline = lambda x: POSITIVE_IDX if int(x) == 2 else NEGATIVE_IDX # Map 2 to POS_IDX, 1 to NEG_IDX
 
 def clones(module, N):
   "Produce N identical layers."
@@ -149,7 +149,7 @@ class SublayerConnection(nn.Module):
 
   def forward(self, x, sublayer):
     "Apply residual connection to any sublayer with the same size."
-    # Post-LN applied according to best modern practices. Attention is all you need paper applies Pre-LN.
+    # Pre-LN applied according to best modern practices. Attention is all you need paper applies Post-LN.
     return x + self.dropout(sublayer(self.norm(x)))
 
 class EncoderLayer(nn.Module):
@@ -334,8 +334,8 @@ def train_one_epoch_generative(model, dataloader, loss_fn, optimizer, epoch):
     
     # We need to reshape the output and target for the loss function
     loss = loss_fn(
-        log_probs.contiguous().view(-1, VOCAB_SIZE),
-        tgt_output.contiguous().view(-1)
+        log_probs.reshape(-1, VOCAB_SIZE),
+        tgt_output.reshape(-1)
     )
     loss.backward()
     torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
@@ -350,6 +350,32 @@ def train_one_epoch_generative(model, dataloader, loss_fn, optimizer, epoch):
             f'loss {cur_loss:5.2f} | perplexity {math.exp(cur_loss):8.2f}')
       total_loss = 0
       start_time = time.time()
+
+def evaluate(model, dataloader, loss_fn):
+  """
+  Evaluates the model on a given dataset (e.g., validation or test).
+  """
+  model.eval()
+  total_loss = 0
+  with torch.no_grad():
+    for src, tgt in dataloader:
+      # Prepare target input and output sequences
+      tgt_input = tgt[:, :-1]
+      tgt_output = tgt[:, 1:]
+
+      # Create masks
+      src_mask = (src == PAD_IDX).unsqueeze(1)
+      tgt_pad_mask = (tgt_input == PAD_IDX).unsqueeze(1)
+      look_ahead_mask = subsequent_mask(tgt_input.size(1))
+      combined_mask = tgt_pad_mask | look_ahead_mask
+
+      # Forward pass
+      decoder_output = model(src, tgt_input, src_mask=src_mask, tgt_mask=combined_mask)
+      log_probs = model.generator(decoder_output)
+      
+      loss = loss_fn(log_probs.reshape(-1, VOCAB_SIZE), tgt_output.reshape(-1))
+      total_loss += loss.item()
+  return total_loss / len(dataloader)
 
 def sample_decode(model, src, max_len, start_symbol, top_p=0.92):
   """
@@ -423,24 +449,27 @@ def generate_review(model, sentiment_token_idx, sentiment_str):
 
 if __name__ == '__main__':
   train_iter = IMDB(split='train')
+  test_iter = IMDB(split='test')
   train_dataloader = DataLoader(list(train_iter), batch_size=BATCH_SIZE, shuffle=True, collate_fn=collate_batch_generative)
+  test_dataloader = DataLoader(list(test_iter), batch_size=BATCH_SIZE, shuffle=False, collate_fn=collate_batch_generative)
 
   model = make_model(VOCAB_SIZE)
 
   # Define loss function and optimizer
   criterion = nn.NLLLoss(ignore_index=PAD_IDX)
   optimizer = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE, betas=(0.9, 0.98), eps=1e-9)
-  # Add a learning rate scheduler to help with convergence
   scheduler = StepLR(optimizer, step_size=1.0, gamma=0.95)
-
-  generate_review(model, POSITIVE_IDX, "positive")
-  generate_review(model, NEGATIVE_IDX, "negative")
 
   for epoch in range(1, NUM_EPOCHS + 1):
     epoch_start_time = time.time()
     train_one_epoch_generative(model, train_dataloader, criterion, optimizer, epoch)
+    
+    val_loss = evaluate(model, test_dataloader, criterion)
+    val_ppl = math.exp(val_loss)
+    
     print('-' * 89)
-    print(f'| end of epoch {epoch:3d} | time: {time.time() - epoch_start_time:5.2f}s |')
+    print(f'| end of epoch {epoch:3d} | time: {time.time() - epoch_start_time:5.2f}s | '
+          f'valid loss {val_loss:5.2f} | valid perplexity {val_ppl:8.2f}')
     print('-' * 89)
     scheduler.step() # Update the learning rate
 
