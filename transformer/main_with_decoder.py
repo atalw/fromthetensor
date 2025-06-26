@@ -9,6 +9,7 @@ import torch.nn.functional as F
 import math
 import copy
 import time
+from torch.optim.lr_scheduler import StepLR
 
 # Set the device (MPS for Apple Silicon, CUDA for Nvidia, or CPU)
 if torch.backends.mps.is_available():
@@ -29,7 +30,7 @@ MAX_LEN = 256       # Maximum sequence length
 # Training Hyperparameters
 BATCH_SIZE = 32
 LEARNING_RATE = 0.0001
-NUM_EPOCHS = 10
+NUM_EPOCHS = 10 # Keep at 10, but note that more epochs might be needed for better quality
 
 tokenizer = get_tokenizer('basic_english')
 # Load the training set to build the vocabulary.
@@ -350,27 +351,69 @@ def train_one_epoch_generative(model, dataloader, loss_fn, optimizer, epoch):
       total_loss = 0
       start_time = time.time()
 
-def greedy_decode(model, src, max_len, start_symbol):
+def sample_decode(model, src, max_len, start_symbol, top_p=0.92):
+  """
+  Generates text using nucleus sampling (top-p) for more diverse and
+  less repetitive results compared to greedy decoding.
+  """
   model.eval()
   src_mask = (src == PAD_IDX).unsqueeze(1)
   memory = model.encode(src, src_mask=src_mask)
   ys = torch.ones(1, 1).fill_(start_symbol).type(torch.long).to(device)
+
   for i in range(max_len - 1):
     tgt_mask = subsequent_mask(ys.size(1)).type(torch.bool).to(device)
     out = model.decode(memory, src_mask=src_mask, tgt=ys, tgt_mask=tgt_mask)
-    prob = model.generator(out[:, -1])
-    _, next_word = torch.max(prob, dim=1)
-    next_word = next_word.item()
+    
+    # Get probabilities from the last token's output
+    log_probs = model.generator(out[:, -1])
+    probs = torch.exp(log_probs)
+
+    # --- Nucleus Sampling (Top-p) ---
+    sorted_probs, sorted_indices = torch.sort(probs, descending=True)
+    cumulative_probs = torch.cumsum(sorted_probs, dim=-1)
+
+    # Remove tokens with cumulative probability above the threshold
+    sorted_indices_to_remove = cumulative_probs > top_p
+    # Shift the indices to the right to keep the first token above the threshold
+    # This ensures that at least one token is always kept, even if its probability
+    # is very low, as long as top_p is not 0.
+    sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
+    sorted_indices_to_remove[..., 0] = 0
+
+    # Scatter sorted tensors to original indexing
+    indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
+    probs[indices_to_remove] = 0
+    
+    # Sample from the renormalized distribution
+    next_word = torch.multinomial(probs, num_samples=1).item()
+
     ys = torch.cat([ys, torch.ones(1, 1).type(torch.long).to(device).fill_(next_word)], dim=1)
     if next_word == EOS_IDX:
       break
   return ys
 
+# def greedy_decode(model, src, max_len, start_symbol):
+#   model.eval()
+#   src_mask = (src == PAD_IDX).unsqueeze(1)
+#   memory = model.encode(src, src_mask=src_mask)
+#   ys = torch.ones(1, 1).fill_(start_symbol).type(torch.long).to(device)
+#   for i in range(max_len - 1):
+#     tgt_mask = subsequent_mask(ys.size(1)).type(torch.bool).to(device)
+#     out = model.decode(memory, src_mask=src_mask, tgt=ys, tgt_mask=tgt_mask)
+#     prob = model.generator(out[:, -1])
+#     _, next_word = torch.max(prob, dim=1)
+#     next_word = next_word.item()
+#     ys = torch.cat([ys, torch.ones(1, 1).type(torch.long).to(device).fill_(next_word)], dim=1)
+#     if next_word == EOS_IDX:
+#       break
+#   return ys
+
 def generate_review(model, sentiment_token_idx, sentiment_str):
   print(f"\n--- Generating a {sentiment_str} review ---")
   model.eval()
   src = torch.tensor([[sentiment_token_idx]], device=device)
-  generated_indices = greedy_decode(model, src, max_len=MAX_LEN, start_symbol=SOS_IDX)
+  generated_indices = sample_decode(model, src, max_len=MAX_LEN, start_symbol=SOS_IDX)
   generated_tokens = vocab.get_itos()
   review_tokens = [generated_tokens[i] for i in generated_indices[0].cpu().numpy()]
   
@@ -386,7 +429,9 @@ if __name__ == '__main__':
 
   # Define loss function and optimizer
   criterion = nn.NLLLoss(ignore_index=PAD_IDX)
-  optimizer = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE)
+  optimizer = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE, betas=(0.9, 0.98), eps=1e-9)
+  # Add a learning rate scheduler to help with convergence
+  scheduler = StepLR(optimizer, step_size=1.0, gamma=0.95)
 
   generate_review(model, POSITIVE_IDX, "positive")
   generate_review(model, NEGATIVE_IDX, "negative")
@@ -397,6 +442,7 @@ if __name__ == '__main__':
     print('-' * 89)
     print(f'| end of epoch {epoch:3d} | time: {time.time() - epoch_start_time:5.2f}s |')
     print('-' * 89)
+    scheduler.step() # Update the learning rate
 
   generate_review(model, POSITIVE_IDX, "positive")
   generate_review(model, NEGATIVE_IDX, "negative")
