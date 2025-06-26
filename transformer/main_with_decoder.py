@@ -29,7 +29,7 @@ MAX_LEN = 256       # Maximum sequence length
 # Training Hyperparameters
 BATCH_SIZE = 32
 LEARNING_RATE = 0.0001
-NUM_EPOCHS = 3
+NUM_EPOCHS = 10
 
 tokenizer = get_tokenizer('basic_english')
 # Load the training set to build the vocabulary.
@@ -41,42 +41,39 @@ def yield_tokens(data_iter):
   for _, text in data_iter:
       yield tokenizer(text)
 
-vocab = build_vocab_from_iterator(yield_tokens(train_iter_for_vocab), specials=["<unk>", "<pad>", "<cls>"], max_tokens=VOCAB_SIZE)
+vocab = build_vocab_from_iterator(yield_tokens(train_iter_for_vocab), specials=["<unk>", "<pad>", "<sos>", "<eos>", "<positive>", "<negative>"], max_tokens=VOCAB_SIZE)
 vocab.set_default_index(vocab["<unk>"])
+
+PAD_IDX = vocab['<pad>']
+SOS_IDX = vocab['<sos>']
+EOS_IDX = vocab['<eos>']
+POSITIVE_IDX = vocab['<positive>']
+NEGATIVE_IDX = vocab['<negative>']
 
 text_pipeline = lambda x: vocab(tokenizer(x))
 # The IMDB dataset from torchtext provides integer labels (e.g., 1 for positive, 2 for negative).
-label_pipeline = lambda x: 1 if int(x) == 1 else 0 # Map 1 to 1 (pos), 2 to 0 (neg)
-
-PAD_IDX = vocab['<pad>']
-CLS_IDX = vocab['<cls>']
+label_pipeline = lambda x: POSITIVE_IDX if int(x) == 1 else NEGATIVE_IDX # Map 1 to POS_IDX, 2 to NEG_IDX
 
 def clones(module, N):
   "Produce N identical layers."
   return nn.ModuleList([copy.deepcopy(module) for _ in range(N)])
 
-def collate_batch(batch):
+def collate_batch_generative(batch):
   """
-  Collates a batch of data. Adds <cls> token, truncates, pads, and creates tensors.
-  This function is passed to the DataLoader.
+  Collates a batch of data for the generative sequence-to-sequence task.
   """
-  label_list, text_list = [], []
+  src_list, tgt_list = [], []
   for (_label, _text) in batch:
-    # Process label
-    label_list.append(label_pipeline(_label))
-    
-    # Process text: add <cls>, truncate, and convert to IDs
+    # Source is the sentiment token
+    src_list.append(torch.tensor([label_pipeline(_label)], dtype=torch.int64))
+    # Target is the review text, truncated and with SOS/EOS tokens
     processed_text = text_pipeline(_text)
-    processed_text = processed_text[:MAX_LEN - 1] # Truncate, leave space for <cls>
-    processed_text = [CLS_IDX] + processed_text
-    text_list.append(torch.tensor(processed_text, dtype=torch.int64))
-      
-  # Pad all sequences in the batch to the same length
-  padded_text_list = nn.utils.rnn.pad_sequence(text_list, batch_first=True, padding_value=PAD_IDX)
-  
-  # Convert labels to a tensor
-  label_list = torch.tensor(label_list, dtype=torch.int64)
-  return padded_text_list.to(device), label_list.to(device)
+    processed_text = processed_text[:MAX_LEN - 2] # Truncate, leave space for SOS and EOS
+    tgt_list.append(torch.tensor([SOS_IDX] + processed_text + [EOS_IDX], dtype=torch.int64))
+
+  src_tensors = torch.cat(src_list).unsqueeze(1) # Shape: (batch_size, 1)
+  tgt_tensors = nn.utils.rnn.pad_sequence(tgt_list, batch_first=True, padding_value=PAD_IDX)
+  return src_tensors.to(device), tgt_tensors.to(device)
 
 # The annoted transformer: https://nlp.seas.harvard.edu/annotated-transformer/
 class EncoderDecoder(nn.Module):
@@ -117,7 +114,7 @@ class Encoder(nn.Module):
   def __init__(self, layer, N):
     super(Encoder, self).__init__()
     self.layers = clones(layer, N)
-    self.norm = LayerNorm(layer.size)
+    self.norm = nn.LayerNorm(layer.size)
 
   def forward(self, x, mask):
     "Pass the input (and mask) through each layer in turn."
@@ -130,26 +127,13 @@ class Decoder(nn.Module):
   def __init__(self, layer, N):
     super(Decoder, self).__init__()
     self.layers = clones(layer, N)
-    self.norm = LayerNorm(layer.size)
+    self.norm = nn.LayerNorm(layer.size)
 
   def forward(self, x, memory, src_mask, tgt_mask):
     "Pass the input (and mask) through each layer in turn."
     for layer in self.layers:
       x = layer(x, memory, src_mask, tgt_mask)
     return self.norm(x)
-
-class LayerNorm(nn.Module):
-  "Construct a layernorm module (See citation for details)."
-  def __init__(self, features, eps=1e-6):
-    super(LayerNorm, self).__init__()
-    self.a_2 = nn.Parameter(torch.ones(features))
-    self.b_2 = nn.Parameter(torch.zeros(features))
-    self.eps = eps
-
-  def forward(self, x):
-    mean = x.mean(-1, keepdim=True)
-    std = x.std(-1, keepdim=True)
-    return self.a_2 * (x - mean) / (std + self.eps) + self.b_2
 
 class SublayerConnection(nn.Module):
   """
@@ -159,7 +143,7 @@ class SublayerConnection(nn.Module):
 
   def __init__(self, size, dropout):
     super(SublayerConnection, self).__init__()
-    self.norm = LayerNorm(size)
+    self.norm = nn.LayerNorm(size)
     self.dropout = nn.Dropout(dropout)
 
   def forward(self, x, sublayer):
@@ -232,10 +216,9 @@ class MultiHeadedAttention(nn.Module):
   def forward(self, query, key, value, mask=None):
     "Implements Figure 2"
     if mask is not None:
-        # Same mask applied to all h heads.
-        # For a padding mask of shape (N, S), we need to make it (N, 1, 1, S)
-        # to broadcast correctly to the scores matrix of shape (N, h, S, S).
-        mask = mask.unsqueeze(1).unsqueeze(2)
+      # Same mask applied to all h heads.
+      # Unsqueeze to prepare for broadcasting, e.g., (N, S) -> (N, 1, S)
+      mask = mask.unsqueeze(1)
     nbatches = query.size(0)
 
     # 1) Do all the linear projections in batch from d_model => h x d_k
@@ -323,18 +306,97 @@ def make_model(vocab_size, n_layers=NUM_LAYERS, d_model=EMBED_DIM, d_ff=HIDDEN_D
       nn.init.xavier_uniform_(p)
   return model.to(device)
     
+def train_one_epoch_generative(model, dataloader, loss_fn, optimizer, epoch):
+  model.train()
+  total_loss = 0
+  log_interval = 100
+  start_time = time.time()
+
+  for i, (src, tgt) in enumerate(dataloader):
+    # Prepare target input and output sequences
+    tgt_input = tgt[:, :-1]  # All but the last token
+    tgt_output = tgt[:, 1:]   # All but the first token (SOS)
+
+    # Create masks
+    # Source mask is not strictly needed as src is fixed size (1), but good practice
+    src_mask = (src == PAD_IDX).unsqueeze(1)
+    tgt_pad_mask = (tgt_input == PAD_IDX).unsqueeze(1)
+    look_ahead_mask = subsequent_mask(tgt_input.size(1))
+    combined_mask = tgt_pad_mask | look_ahead_mask
+
+    # Forward pass
+    optimizer.zero_grad()
+    # The model returns the decoder's output, which has shape (batch, seq_len, d_model)
+    decoder_output = model(src, tgt_input, src_mask=src_mask, tgt_mask=combined_mask)
+    # The generator projects this to log-probabilities over the vocabulary
+    log_probs = model.generator(decoder_output)
+    
+    # We need to reshape the output and target for the loss function
+    loss = loss_fn(
+        log_probs.contiguous().view(-1, VOCAB_SIZE),
+        tgt_output.contiguous().view(-1)
+    )
+    loss.backward()
+    torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
+    optimizer.step()
+
+    total_loss += loss.item()
+
+    if i % log_interval == 0 and i > 0:
+      cur_loss = total_loss / log_interval
+      elapsed = time.time() - start_time
+      print(f'| epoch {epoch:3d} | {i:5d}/{len(dataloader):5d} batches | '
+            f'loss {cur_loss:5.2f} | perplexity {math.exp(cur_loss):8.2f}')
+      total_loss = 0
+      start_time = time.time()
+
+def greedy_decode(model, src, max_len, start_symbol):
+  model.eval()
+  src_mask = (src == PAD_IDX).unsqueeze(1)
+  memory = model.encode(src, src_mask=src_mask)
+  ys = torch.ones(1, 1).fill_(start_symbol).type(torch.long).to(device)
+  for i in range(max_len - 1):
+    tgt_mask = subsequent_mask(ys.size(1)).type(torch.bool).to(device)
+    out = model.decode(memory, src_mask=src_mask, tgt=ys, tgt_mask=tgt_mask)
+    prob = model.generator(out[:, -1])
+    _, next_word = torch.max(prob, dim=1)
+    next_word = next_word.item()
+    ys = torch.cat([ys, torch.ones(1, 1).type(torch.long).to(device).fill_(next_word)], dim=1)
+    if next_word == EOS_IDX:
+      break
+  return ys
+
+def generate_review(model, sentiment_token_idx, sentiment_str):
+  print(f"\n--- Generating a {sentiment_str} review ---")
+  model.eval()
+  src = torch.tensor([[sentiment_token_idx]], device=device)
+  generated_indices = greedy_decode(model, src, max_len=MAX_LEN, start_symbol=SOS_IDX)
+  generated_tokens = vocab.get_itos()
+  review_tokens = [generated_tokens[i] for i in generated_indices[0].cpu().numpy()]
+  
+  # Filter out special tokens for cleaner output
+  review_tokens = [t for t in review_tokens if t not in ['<sos>', '<eos>', '<pad>']]
+  print(" ".join(review_tokens))
+
 if __name__ == '__main__':
-  # Load the train and test sets. The iterators can only be consumed once.
-  # We need to re-initialize them here for the DataLoaders.
-  train_iter, test_iter = IMDB(split=('train', 'test'))
-  # list() consumes the iterator and loads the data into memory.
-  # This is acceptable for IMDB but not for very large datasets.
-  train_dataloader = DataLoader(list(train_iter), batch_size=BATCH_SIZE, shuffle=True, collate_fn=collate_batch)
-  test_dataloader = DataLoader(list(test_iter), batch_size=BATCH_SIZE, shuffle=False, collate_fn=collate_batch)
+  train_iter = IMDB(split='train')
+  train_dataloader = DataLoader(list(train_iter), batch_size=BATCH_SIZE, shuffle=True, collate_fn=collate_batch_generative)
 
   model = make_model(VOCAB_SIZE)
 
-  # Instantiate the model
   # Define loss function and optimizer
-  criterion = nn.CrossEntropyLoss()
+  criterion = nn.NLLLoss(ignore_index=PAD_IDX)
   optimizer = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE)
+
+  generate_review(model, POSITIVE_IDX, "positive")
+  generate_review(model, NEGATIVE_IDX, "negative")
+
+  for epoch in range(1, NUM_EPOCHS + 1):
+    epoch_start_time = time.time()
+    train_one_epoch_generative(model, train_dataloader, criterion, optimizer, epoch)
+    print('-' * 89)
+    print(f'| end of epoch {epoch:3d} | time: {time.time() - epoch_start_time:5.2f}s |')
+    print('-' * 89)
+
+  generate_review(model, POSITIVE_IDX, "positive")
+  generate_review(model, NEGATIVE_IDX, "negative")
