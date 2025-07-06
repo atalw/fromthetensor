@@ -16,7 +16,7 @@ This repository contains a series of mini-projects that build up the core compon
 
 ## Section 3: Classic Models and Architectures
 
-- **Boston Housing Price Prediction (Linear Regression)** (80 lines) -- A classic introductory project. You'll implement a simple linear regression model from scratch to predict housing prices, solidifying your understanding of loss functions and gradient descent.
+- **Boston Housing Price Prediction** (80 lines) -- A classic introductory project. You'll implement a simple linear regression model from scratch to predict housing prices, solidifying your understanding of loss functions and gradient descent.
 - **CIFAR Image Classification** (80 lines) -- In this [project](https://github.com/atalw/fromthetensor/blob/main/cifar/train.py), you'll build a Convolutional Neural Network (CNN) to classify images from the CIFAR-10 dataset. You'll implement convolution and pooling layers to see how they excel at image-based tasks. [[Paper](https://proceedings.neurips.cc/paper_files/paper/2012/file/c399862d3b9d6b76c8436e924a68c45b-Paper.pdf)]
 - **DeepChess** (500 lines) -- Build a complete chess engine. You'll start by creating a `pos2vec` model that learns to represent chess positions as vectors. Then, you'll use a siamese network to compare board positions and a distilled model to create a smaller, faster version of your engine. [[Paper](https://arxiv.org/abs/1711.09667)]
 - **Recurrent Neural Networks (RNNs)**  (100 lines) -- Let's dive into sequence data. In this project, you will build a simple classification model that can correctly determine the nationality of a person given their name. [[Blog](https://jaketae.github.io/study/pytorch-rnn/)]
