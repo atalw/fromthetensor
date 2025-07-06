@@ -1,4 +1,4 @@
-# From the Tensor
+# From the Tensor to the Transformer 
 
 This repository contains a series of mini-projects that build up the core components of modern deep learning frameworks from scratch. The goal is to understand the magic behind libraries like PyTorch and Tinygrad by building them ourselves, from the tensor up to a full-blown transformer model.
 
